@@ -1,0 +1,355 @@
+/* ==== VARIABLES DE TEMA ==== */
+:root {
+  --bg: #050816;
+  --bg-elevated: #0b1120;
+  --bg-card: #020617;
+  --accent: #22d3ee;   /* celeste/turquesa */
+  --accent-soft: rgba(34, 211, 238, 0.14);
+  --text: #e5e7eb;
+  --muted: #9ca3af;
+  --danger: #f97373;
+  --radius-lg: 18px;
+  --radius-md: 12px;
+  --radius-pill: 999px;
+  --shadow-soft: 0 18px 45px rgba(0, 0, 0, 0.5);
+  --font-main: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* ==== RESETEO SUAVE ==== */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+}
+
+body.app {
+  min-height: 100vh;
+  background: radial-gradient(circle at top left, #111827 0, #020617 45%, #000 100%);
+  color: var(--text);
+  font-family: var(--font-main);
+}
+
+/* ==== LAYOUT GENERAL ==== */
+.container {
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+
+/* ==== NAVBAR ==== */
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  backdrop-filter: blur(16px);
+  background: linear-gradient(
+    to bottom,
+    rgba(15, 23, 42, 0.95),
+    rgba(15, 23, 42, 0.7),
+    transparent
+  );
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.nav-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.9rem 0;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-weight: 600;
+}
+
+.logo-mark {
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--accent), #38bdf8);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  color: #020617;
+}
+
+.logo-text {
+  letter-spacing: 0.04em;
+}
+
+.nav-links {
+  display: flex;
+  gap: 1.5rem;
+  font-size: 0.9rem;
+}
+
+.nav-links a {
+  color: var(--muted);
+  text-decoration: none;
+  position: relative;
+}
+
+.nav-links a::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -4px;
+  width: 0;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 0.2s ease;
+}
+
+.nav-links a:hover {
+  color: var(--text);
+}
+
+.nav-links a:hover::after {
+  width: 100%;
+}
+
+.nav-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+/* ==== BOTONES ==== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.55rem 1.2rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.9rem;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent), #38bdf8);
+  color: #020617;
+  box-shadow: 0 12px 25px rgba(8, 47, 73, 0.6);
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 18px 40px rgba(8, 47, 73, 0.75);
+}
+
+.btn-secondary {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.btn-secondary:hover {
+  background: rgba(34, 211, 238, 0.22);
+}
+
+.btn-ghost {
+  background: transparent;
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  color: var(--muted);
+}
+
+.btn-ghost:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ==== HERO ==== */
+.hero {
+  padding: 4.5rem 0 3.5rem;
+}
+
+.hero-grid {
+  display: grid;
+  gap: 2.5rem;
+  align-items: center;
+}
+
+@media (min-width: 900px) {
+  .hero-grid {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  }
+}
+
+.hero-text h1 {
+  font-size: clamp(2.1rem, 3.3vw + 1.4rem, 3.2rem);
+  line-height: 1.1;
+  margin: 0.8rem 0 1.1rem;
+}
+
+.hero-text p {
+  margin: 0;
+  color: var(--muted);
+  max-width: 34rem;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.7rem;
+  border-radius: var(--radius-pill);
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.hero-cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  margin: 1.5rem 0 0.7rem;
+}
+
+.hero-meta {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+/* ==== HERO VISUAL ==== */
+.hero-visual {
+  display: grid;
+  gap: 1.1rem;
+}
+
+@media (min-width: 900px) {
+  .hero-visual {
+    justify-items: end;
+  }
+}
+
+.card {
+  background: radial-gradient(circle at top left, #111827 0, #020617 55%);
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.1rem;
+  box-shadow: var(--shadow-soft);
+  border: 1px solid rgba(15, 23, 42, 0.8);
+}
+
+.card-title {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+/* Stat grande */
+.stat-card .stat-number {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 1.8rem;
+  font-weight: 600;
+}
+
+.stat-card .stat-label {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* Gráfico fake */
+.chart-placeholder {
+  height: 90px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--accent-soft), rgba(15, 23, 42, 0.9));
+  display: flex;
+  align-items: flex-end;
+  padding: 0.6rem;
+  overflow: hidden;
+  margin: 0.5rem 0;
+}
+
+.chart-bar {
+  width: 60%;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--accent), #38bdf8);
+}
+
+/* Mini card */
+.mini-card {
+  max-width: 200px;
+}
+
+.mini-label {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.mini-value {
+  display: block;
+  font-size: 1.4rem;
+  font-weight: 600;
+  margin-top: 0.3rem;
+}
+
+.mini-helper {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* ==== SECCIONES GENERALES ==== */
+.section {
+  padding: 3rem 0 4rem;
+}
+
+.section-title {
+  text-align: center;
+  font-size: 1.6rem;
+  margin-bottom: 0.5rem;
+}
+
+.section-subtitle {
+  text-align: center;
+  color: var(--muted);
+  max-width: 32rem;
+  margin: 0 auto 2rem;
+}
+
+/* ==== FEATURES ==== */
+.feature-grid {
+  display: grid;
+  gap: 1.5rem;
+}
+
+@media (min-width: 800px) {
+  .feature-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.feature-card {
+  background: rgba(15, 23, 42, 0.9);
+}
+
+.feature-card h3 {
+  margin-top: 0;
+  margin-bottom: 0.6rem;
+  font-size: 1rem;
+}
+
+.feature-card p {
+  margin: 0;
+  color: var(--muted);
+}
+
+/* ==== RESPONSIVE NAV ==== */
+@media (max-width: 768px) {
+  .nav-links {
+    display: none; /* Más adelante podés hacer un menú hamburguesa */
+  }
+}
