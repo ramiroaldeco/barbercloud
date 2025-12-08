@@ -3,9 +3,9 @@ const express = require('express');
 const cors = require('cors');
 
 // Rutas
-const barbershopRoutes = require('./routes/barbershops');
-const serviceRoutes = require('./routes/services');
-const appointmentRoutes = require('./routes/appointments');
+const barbershopRoutes = require('./barbershops.js');
+const serviceRoutes = require('./services.js');
+const appointmentRoutes = require('./appointments.js');
 
 const app = express();
 
