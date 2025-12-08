@@ -1,19 +1,23 @@
 const express = require('express');
 const router = express.Router();
 
-// Servicios de ejemplo (más adelante habrá tabla services)
 const services = [
-  { id: 1, barbershopId: 1, name: 'Corte clásico', durationMinutes: 30, price: 5000 },
-  { id: 2, barbershopId: 1, name: 'Corte + Barba', durationMinutes: 45, price: 8000 },
+  { id: 1, barbershopId: 1, name: 'Corte clásico', price: 4000 },
+  { id: 2, barbershopId: 1, name: 'Degradé + barba', price: 5500 },
+  { id: 3, barbershopId: 1, name: 'Afeitado completo', price: 3500 }
 ];
 
-// GET /api/services?barbershopId=1
 router.get('/', (req, res) => {
-  const barbershopId = Number(req.query.barbershopId);
+  const { barbershopId } = req.query;
+  let result = services;
+
   if (barbershopId) {
-    return res.json(services.filter((s) => s.barbershopId === barbershopId));
+    result = services.filter(
+      (s) => s.barbershopId === Number(barbershopId)
+    );
   }
-  res.json(services);
+
+  res.json(result);
 });
 
 module.exports = router;
