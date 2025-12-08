@@ -1,14 +1,12 @@
 {
   "name": "barbercloud-backend",
   "version": "1.0.0",
-  "description": "",
+  "description": "Backend API de BarberCloud",
   "main": "server.js",
   "scripts": {
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "start": "node server.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.0.0",
