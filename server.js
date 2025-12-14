@@ -1,34 +1,29 @@
+// Backend/server.js
 require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
 
-// Rutas
-const barbershopRoutes = require('./barbershops.js');
-const serviceRoutes = require('./services.js');
-const appointmentRoutes = require('./appointments.js');
+const barbershopRoutes = require('./barbershops');
+const serviceRoutes = require('./services');
+const appointmentRoutes = require('./appointments');
 
 const app = express();
+const PORT = process.env.PORT || 4000;
 
 app.use(cors());
 app.use(express.json());
 
-// Endpoint de prueba principal
+// Endpoint de prueba
 app.get('/', (req, res) => {
   res.send('BarberCloud API OK');
 });
 
-// Endpoint de health (opcional, para chequear en Render)
-app.get('/api/health', (req, res) => {
-  res.json({ ok: true, message: 'BarberCloud API funcionando 🚀' });
-});
-
-// Rutas principales de la API
+// Rutas principales
 app.use('/api/barbershops', barbershopRoutes);
 app.use('/api/services', serviceRoutes);
 app.use('/api/appointments', appointmentRoutes);
 
-// Puerto (Render usa process.env.PORT)
-const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
   console.log(`Servidor BarberCloud escuchando en http://localhost:${PORT}`);
 });
