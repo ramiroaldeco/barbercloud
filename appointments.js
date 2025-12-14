@@ -1,46 +1,61 @@
+// Backend/appointments.js
 const express = require('express');
+const prisma = require('./prisma');
+
 const router = express.Router();
 
-const appointments = [];
-
-router.get('/', (req, res) => {
-  res.json(appointments);
+// GET /api/appointments  (para debug / después panel admin)
+router.get('/', async (req, res) => {
+  try {
+    const appointments = await prisma.appointment.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(appointments);
+  } catch (err) {
+    console.error('Error al obtener turnos:', err);
+    res.status(500).json({ error: 'Error al obtener turnos' });
+  }
 });
 
-router.post('/', (req, res) => {
-  const {
-    barbershopId,
-    serviceId,
-    customerName,
-    customerPhone,
-    date,
-    time
-  } = req.body;
+// POST /api/appointments  (lo que usa tu formulario)
+router.post('/', async (req, res) => {
+  try {
+    const {
+      barbershopId,
+      serviceId,
+      customerName,
+      customerPhone,
+      date,
+      time,
+    } = req.body;
 
-  if (
-    !barbershopId ||
-    !serviceId ||
-    !customerName ||
-    !customerPhone ||
-    !date ||
-    !time
-  ) {
-    return res.status(400).json({ error: 'Faltan datos del turno' });
+    if (
+      !barbershopId ||
+      !serviceId ||
+      !customerName ||
+      !customerPhone ||
+      !date ||
+      !time
+    ) {
+      return res.status(400).json({ error: 'Faltan datos del turno' });
+    }
+
+    const appointment = await prisma.appointment.create({
+      data: {
+        barbershopId: Number(barbershopId),
+        serviceId: Number(serviceId),
+        customerName,
+        customerPhone,
+        date,
+        time,
+      },
+    });
+
+    res.status(201).json(appointment);
+  } catch (err) {
+    console.error('Error al crear turno:', err);
+    res.status(500).json({ error: 'Error al crear turno' });
   }
-
-  const newAppointment = {
-    id: appointments.length + 1,
-    barbershopId,
-    serviceId,
-    customerName,
-    customerPhone,
-    date,
-    time,
-    createdAt: new Date().toISOString()
-  };
-
-  appointments.push(newAppointment);
-  res.status(201).json(newAppointment);
 });
 
 module.exports = router;
