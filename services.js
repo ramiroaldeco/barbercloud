@@ -1,23 +1,25 @@
+// Backend/services.js
 const express = require('express');
+const prisma = require('./prisma');
+
 const router = express.Router();
 
-const services = [
-  { id: 1, barbershopId: 1, name: 'Corte clásico', price: 4000 },
-  { id: 2, barbershopId: 1, name: 'Degradé + barba', price: 5500 },
-  { id: 3, barbershopId: 1, name: 'Afeitado completo', price: 3500 }
-];
+// GET /api/services?barbershopId=1
+router.get('/', async (req, res) => {
+  try {
+    const { barbershopId } = req.query;
 
-router.get('/', (req, res) => {
-  const { barbershopId } = req.query;
-  let result = services;
+    const where = {};
+    if (barbershopId) {
+      where.barbershopId = Number(barbershopId);
+    }
 
-  if (barbershopId) {
-    result = services.filter(
-      (s) => s.barbershopId === Number(barbershopId)
-    );
+    const services = await prisma.service.findMany({ where });
+    res.json(services);
+  } catch (err) {
+    console.error('Error al obtener servicios:', err);
+    res.status(500).json({ error: 'Error al obtener servicios' });
   }
-
-  res.json(result);
 });
 
 module.exports = router;
