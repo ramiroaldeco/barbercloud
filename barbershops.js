@@ -1,18 +1,18 @@
+// barbershops.js
 const express = require('express');
+const prisma = require('./prisma');
+
 const router = express.Router();
 
-const barbershops = [
-  {
-    id: 1,
-    name: 'Barbería Demo',
-    city: 'Hernando',
-    address: 'Calle Falsa 123',
-    phone: '+54 9 351 111 2222'
+// GET /api/barbershops
+router.get('/', async (req, res) => {
+  try {
+    const shops = await prisma.barbershop.findMany();
+    res.json(shops);
+  } catch (err) {
+    console.error('Error al obtener barberías:', err);
+    res.status(500).json({ error: 'Error al obtener barberías' });
   }
-];
-
-router.get('/', (req, res) => {
-  res.json(barbershops);
 });
 
 module.exports = router;
