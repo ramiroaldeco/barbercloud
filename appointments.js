@@ -1,3 +1,5 @@
+const auth = require('./authMiddleware');
+
 // Backend/appointments.js
 const express = require('express');
 const prisma = require('./prisma');
@@ -59,3 +61,27 @@ router.post('/', async (req, res) => {
 });
 
 module.exports = router;
+// Turnos de la barbería del usuario logueado
+router.get('/mine', auth, async (req, res) => {
+  try {
+    const barbershopId = req.user.barbershopId;
+
+    const appointments = await prisma.appointment.findMany({
+      where: { barbershopId },
+      orderBy: [
+        { date: 'asc' },
+        { time: 'asc' },
+      ],
+      include: {
+        barbershop: true,
+        service: true,
+      },
+    });
+
+    res.json(appointments);
+  } catch (err) {
+    console.error('Error en GET /appointments/mine', err);
+    res.status(500).json({ error: 'Error al cargar los turnos de la barbería' });
+  }
+});
+
