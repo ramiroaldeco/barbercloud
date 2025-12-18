@@ -1,39 +1,57 @@
-generator client {
-  provider = "prisma-client-js"
-}
-
+// schema.prisma
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
+generator client {
+  provider = "prisma-client-js"
+}
+
 model Barbershop {
-  id           Int           @id @default(autoincrement())
+  id           Int              @id @default(autoincrement())
   name         String
   city         String
+  address      String?
+  phone        String?
   services     Service[]
   appointments Appointment[]
+  users        BarbershopUser[]
 }
 
 model Service {
-  id           Int           @id @default(autoincrement())
-  barbershop   Barbershop    @relation(fields: [barbershopId], references: [id])
+  id           Int              @id @default(autoincrement())
   barbershopId Int
+  barbershop   Barbershop       @relation(fields: [barbershopId], references: [id])
   name         String
   price        Int
   appointments Appointment[]
 }
 
 model Appointment {
-  id            Int        @id @default(autoincrement())
-  barbershop    Barbershop @relation(fields: [barbershopId], references: [id])
-  barbershopId  Int
-  service       Service    @relation(fields: [serviceId], references: [id])
-  serviceId     Int
-  customerName  String
+  id           Int        @id @default(autoincrement())
+  barbershopId Int
+  serviceId    Int
+  customerName String
   customerPhone String
-  date          String
-  time          String
-  createdAt     DateTime   @default(now())
+  date         String
+  time         String
+  createdAt    DateTime   @default(now())
+
+  barbershop   Barbershop @relation(fields: [barbershopId], references: [id])
+  service      Service    @relation(fields: [serviceId], references: [id])
+}
+
+model BarbershopUser {
+  id           Int        @id @default(autoincrement())
+  barbershop   Barbershop @relation(fields: [barbershopId], references: [id])
+  barbershopId Int
+
+  name         String
+  email        String     @unique
+  passwordHash String
+  role         String     @default("owner")
+
+  createdAt    DateTime   @default(now())
 }
 
