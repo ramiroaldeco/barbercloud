@@ -2,13 +2,11 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('./prisma');
 
-const prisma = new PrismaClient();
 const router = express.Router();
 
-// REGISTRO de usuario de barbería
-// Por ahora lo vas a usar vos con Postman/Insomnia, después hacemos pantallita.
+// Register (owner)
 router.post('/register', async (req, res) => {
   try {
     const { barbershopId, name, email, password } = req.body;
@@ -17,13 +15,8 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Faltan datos' });
     }
 
-    const existing = await prisma.barbershopUser.findUnique({
-      where: { email },
-    });
-
-    if (existing) {
-      return res.status(400).json({ error: 'Ya existe un usuario con ese email' });
-    }
+    const existing = await prisma.barbershopUser.findUnique({ where: { email } });
+    if (existing) return res.status(409).json({ error: 'Email ya registrado' });
 
     const passwordHash = await bcrypt.hash(password, 10);
 
@@ -33,67 +26,44 @@ router.post('/register', async (req, res) => {
         name,
         email,
         passwordHash,
+        role: 'owner',
       },
+      select: { id: true, name: true, email: true, barbershopId: true, role: true },
     });
 
-    res.status(201).json({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      barbershopId: user.barbershopId,
-      role: user.role,
-    });
+    res.json({ ok: true, user });
   } catch (err) {
-    console.error('Error en /auth/register', err);
-    res.status(500).json({ error: 'Error interno en el registro' });
+    console.error('Register error:', err);
+    res.status(500).json({ error: 'Error al registrar' });
   }
 });
 
-// LOGIN
+// Login
 router.post('/login', async (req, res) => {
   try {
-	   console.log('REQ BODY EN /auth/register:', req.body);
     const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ error: 'Faltan datos' });
 
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email y contraseña son obligatorios' });
-    }
-
-    const user = await prisma.barbershopUser.findUnique({
-      where: { email },
-    });
-
-    if (!user) {
-      return res.status(400).json({ error: 'Usuario o contraseña inválidos' });
-    }
+    const user = await prisma.barbershopUser.findUnique({ where: { email } });
+    if (!user) return res.status(401).json({ error: 'Credenciales inválidas' });
 
     const ok = await bcrypt.compare(password, user.passwordHash);
-    if (!ok) {
-      return res.status(400).json({ error: 'Usuario o contraseña inválidos' });
-    }
+    if (!ok) return res.status(401).json({ error: 'Credenciales inválidas' });
 
     const token = jwt.sign(
-      {
-        userId: user.id,
-        barbershopId: user.barbershopId,
-        role: user.role,
-      },
+      { userId: user.id, barbershopId: user.barbershopId, role: user.role },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
 
     res.json({
+      ok: true,
       token,
-      user: {
-        id: user.id,
-        name: user.name,
-        barbershopId: user.barbershopId,
-        role: user.role,
-      },
+      user: { id: user.id, name: user.name, email: user.email, barbershopId: user.barbershopId, role: user.role },
     });
   } catch (err) {
-    console.error('Error en /auth/login', err);
-    res.status(500).json({ error: 'Error interno en el login' });
+    console.error('Login error:', err);
+    res.status(500).json({ error: 'Error al iniciar sesión' });
   }
 });
 
