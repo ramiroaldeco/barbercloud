@@ -9,19 +9,19 @@ generator client {
 }
 
 model Barbershop {
-  id                       Int              @id @default(autoincrement())
-  name                     String
-  city                     String
-  address                  String?
-  phone                    String?
+  id                        Int              @id @default(autoincrement())
+  name                      String
+  city                      String
+  address                   String?
+  phone                     String?
 
   // Config SaaS
   defaultDepositPercentage  Int              @default(15)  // recomendado 15%
-  platformFee              Int              @default(200) // tu comisión por turno (pesos)
+  platformFee               Int              @default(200) // tu comisión por turno (pesos)
 
-  services                 Service[]
-  appointments             Appointment[]
-  users                    BarbershopUser[]
+  services                  Service[]
+  appointments              Appointment[]
+  users                     BarbershopUser[]
 }
 
 model Service {
@@ -40,29 +40,32 @@ model Service {
 }
 
 model Appointment {
-  id             Int      @id @default(autoincrement())
-  barbershopId   Int
-  serviceId      Int
+  id            Int      @id @default(autoincrement())
+  barbershopId  Int
+  serviceId     Int
 
-  customerName   String
-  customerPhone  String
-  date           String
-  time           String
+  customerName  String
+  customerPhone String
+  date          String
+  time          String
 
   // estados SaaS
-  status         String   @default("pending") // pending | confirmed | canceled
-  paymentStatus  String   @default("unpaid")  // unpaid | paid | refunded
+  status        String   @default("pending") // pending | confirmed | canceled
+  paymentStatus String   @default("unpaid")  // unpaid | paid | refunded
 
   // snapshot al momento de reservar
   depositPercentageAtBooking Int @default(0)
-  depositAmount   Int      @default(0) // pesos
-  platformFee     Int      @default(0) // pesos (tu comisión)
-  totalToPay      Int      @default(0) // deposit + platformFee
+  depositAmount              Int @default(0) // pesos
+  platformFee                Int @default(0) // pesos (tu comisión)
+  totalToPay                 Int @default(0) // deposit + platformFee
 
-  createdAt      DateTime @default(now())
+  createdAt     DateTime @default(now())
 
-  barbershop     Barbershop @relation(fields: [barbershopId], references: [id])
-  service        Service    @relation(fields: [serviceId], references: [id])
+  barbershop    Barbershop @relation(fields: [barbershopId], references: [id])
+  service       Service    @relation(fields: [serviceId], references: [id])
+
+  // ✅ Evita doble reserva: misma barbería + mismo día + misma hora
+  @@unique([barbershopId, date, time])
 }
 
 model BarbershopUser {
