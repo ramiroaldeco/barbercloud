@@ -117,37 +117,34 @@ router.put("/mine/settings", auth, async (req, res) => {
     }
 
     const barbershopId = req.user.barbershopId;
-    let { defaultDepositPercentage, platformFee } = req.body;
 
-    if (defaultDepositPercentage !== undefined) {
-      defaultDepositPercentage = Number(defaultDepositPercentage);
-      if (Number.isNaN(defaultDepositPercentage))
-        return res
-          .status(400)
-          .json({ error: "defaultDepositPercentage inválido" });
-      if (defaultDepositPercentage < 0) defaultDepositPercentage = 0;
-      if (defaultDepositPercentage > 100) defaultDepositPercentage = 100;
+    // ✅ SOLO permitir cambiar defaultDepositPercentage
+    //    platformFee se ignora aunque venga en el body
+    let { defaultDepositPercentage } = req.body;
+
+    if (defaultDepositPercentage === undefined) {
+      return res.status(400).json({
+        error: "Falta defaultDepositPercentage",
+      });
     }
 
-    if (platformFee !== undefined) {
-      platformFee = Number(platformFee);
-      if (Number.isNaN(platformFee) || platformFee < 0)
-        return res.status(400).json({ error: "platformFee inválido" });
+    defaultDepositPercentage = Number(defaultDepositPercentage);
+    if (Number.isNaN(defaultDepositPercentage)) {
+      return res.status(400).json({ error: "defaultDepositPercentage inválido" });
     }
+    if (defaultDepositPercentage < 0) defaultDepositPercentage = 0;
+    if (defaultDepositPercentage > 100) defaultDepositPercentage = 100;
 
     const updated = await prisma.barbershop.update({
       where: { id: barbershopId },
       data: {
-        ...(defaultDepositPercentage !== undefined
-          ? { defaultDepositPercentage }
-          : {}),
-        ...(platformFee !== undefined ? { platformFee } : {}),
+        defaultDepositPercentage, // ✅ lo único que se permite guardar
       },
       select: {
         id: true,
         name: true,
         defaultDepositPercentage: true,
-        platformFee: true,
+        platformFee: true, // lo dejamos en response por compatibilidad (si tu frontend aún lo lee)
       },
     });
 
