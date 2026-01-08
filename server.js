@@ -1,5 +1,6 @@
 // server.js
 require("dotenv").config();
+
 const express = require("express");
 const cors = require("cors");
 
@@ -7,25 +8,72 @@ const authRoutes = require("./auth");
 const barbershopsRoutes = require("./barbershops");
 const servicesRoutes = require("./services");
 const appointmentsRoutes = require("./appointments");
-const onboardingRoutes = require("./onboarding"); // ✅ NUEVO
+const onboardingRoutes = require("./onboarding");
 
 const app = express();
 
-app.use(cors());
+/**
+ * =========================
+ * ✅ CORS ROBUSTO Y SEGURO
+ * =========================
+ * Permite:
+ * - GitHub Pages (producción)
+ * - Localhost (desarrollo)
+ * - Requests sin origin (Postman, server-to-server)
+ */
+const ALLOWED_ORIGINS = [
+  "https://ramiroaldeco.github.io",
+  "http://127.0.0.1:5500",
+  "http://localhost:5500",
+];
+
+const corsOptions = {
+  origin: function (origin, cb) {
+    // origin null = Postman / curl / server-to-server
+    if (!origin) return cb(null, true);
+
+    if (ALLOWED_ORIGINS.includes(origin)) {
+      return cb(null, true);
+    }
+
+    return cb(new Error("CORS bloqueado para: " + origin), false);
+  },
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true,
+};
+
+// ⬇️ IMPORTANTE: CORS y preflight ANTES de las rutas
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions)); // ✅ habilita preflight
 app.use(express.json());
 
+/**
+ * =========================
+ * ✅ HEALTHCHECK
+ * =========================
+ */
 app.get("/api/health", (req, res) => {
   res.json({ ok: true, message: "BarberCloud API funcionando 🚀" });
 });
 
-// Rutas
+/**
+ * =========================
+ * ✅ RUTAS API
+ * =========================
+ */
 app.use("/api/auth", authRoutes);
-app.use("/api/onboarding", onboardingRoutes); // ✅ NUEVO
+app.use("/api/onboarding", onboardingRoutes);
 app.use("/api/barbershops", barbershopsRoutes);
 app.use("/api/services", servicesRoutes);
 app.use("/api/appointments", appointmentsRoutes);
 
+/**
+ * =========================
+ * ✅ START SERVER
+ * =========================
+ */
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
-  console.log(`Servidor BarberCloud escuchando en http://localhost:${PORT}`);
+  console.log(`Servidor BarberCloud escuchando en puerto ${PORT}`);
 });
