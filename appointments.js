@@ -113,7 +113,7 @@ router.post("/", async (req, res) => {
     if (pct > 100) pct = 100;
 
     const depositAmount = Math.round(service.price * (pct / 100));
-    const platformFee = Number(barbershop.platformFee ?? 200);
+    const platformFee = Number(process.env.PLATFORM_FEE ?? 200);
     const totalToPay = depositAmount + platformFee;
 
     const appointment = await prisma.appointment.create({
