@@ -11,6 +11,16 @@ function cleanStr(v) {
   return String(v).trim();
 }
 
+// ✅ Paso 4 — Backend: generar slug automáticamente en onboarding
+function slugify(v) {
+  return String(v || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // sin tildes
+    .replace(/[^a-z0-9]+/g, "") // solo letras/números
+    .trim();
+}
+
 // POST /api/onboarding/signup
 // Crea barbershop + owner en un solo paso y devuelve token
 router.post("/signup", async (req, res) => {
@@ -51,6 +61,16 @@ router.post("/signup", async (req, res) => {
       });
     }
 
+    // ✅ Generar slug único (antes de crear la barbershop)
+    const baseSlug = slugify(shopName) || "barberia";
+    let slug = baseSlug;
+    let i = 2;
+
+    while (await prisma.barbershop.findUnique({ where: { slug } })) {
+      slug = `${baseSlug}${i}`;
+      i++;
+    }
+
     const passwordHash = await bcrypt.hash(password, 10);
 
     // Transacción: barbershop + user + servicios demo (opcional)
@@ -61,6 +81,7 @@ router.post("/signup", async (req, res) => {
           city,
           address,
           phone,
+          slug, // ✅
 
           // defaults del SaaS (el dueño lo puede cambiar en el admin)
           defaultDepositPercentage: 15,
