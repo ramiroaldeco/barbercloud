@@ -17,24 +17,24 @@ const app = express();
  * ✅ CORS ROBUSTO Y SEGURO
  * =========================
  * Permite:
- * - GitHub Pages (producción)
+ * - Vercel (.vercel.app)
+ * - GitHub Pages (producción, opcional)
  * - Localhost (desarrollo)
  * - Requests sin origin (Postman, server-to-server)
  */
-const ALLOWED_ORIGINS = [
-  "https://ramiroaldeco.github.io",
-  "http://127.0.0.1:5500",
-  "http://localhost:5500",
-];
-
 const corsOptions = {
   origin: function (origin, cb) {
-    // origin null = Postman / curl / server-to-server
-    if (!origin) return cb(null, true);
+    if (!origin) return cb(null, true); // Postman/curl
 
-    if (ALLOWED_ORIGINS.includes(origin)) {
+    // ✅ permite Vercel (cualquier proyecto .vercel.app)
+    if (origin.endsWith(".vercel.app")) return cb(null, true);
+
+    // ✅ local dev
+    if (origin === "http://localhost:5500" || origin === "http://127.0.0.1:5500")
       return cb(null, true);
-    }
+
+    // (opcional) mantener GitHub Pages si lo seguís usando
+    if (origin === "https://ramiroaldeco.github.io") return cb(null, true);
 
     return cb(new Error("CORS bloqueado para: " + origin), false);
   },
