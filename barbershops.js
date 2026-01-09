@@ -80,6 +80,26 @@ router.post("/", async (req, res) => {
   }
 });
 
+// ✅ Público: buscar barbería por slug (para link lindo)
+//    (poner arriba de /mine para que no choque)
+router.get("/slug/:slug", async (req, res) => {
+  try {
+    const slug = String(req.params.slug || "").toLowerCase().trim();
+    if (!slug) return res.status(400).json({ error: "Falta slug" });
+
+    const bs = await prisma.barbershop.findUnique({
+      where: { slug },
+      select: { id: true, name: true, city: true, slug: true },
+    });
+
+    if (!bs) return res.status(404).json({ error: "Barbería no encontrada" });
+    res.json(bs);
+  } catch (err) {
+    console.error("Error slug:", err);
+    res.status(500).json({ error: "Error interno" });
+  }
+});
+
 // Privado: mi barbería (para panel admin)
 router.get("/mine", auth, async (req, res) => {
   try {
@@ -95,6 +115,7 @@ router.get("/mine", auth, async (req, res) => {
         phone: true,
         defaultDepositPercentage: true,
         platformFee: true,
+        slug: true, // ✅ agregado
       },
     });
 
@@ -130,7 +151,9 @@ router.put("/mine/settings", auth, async (req, res) => {
 
     defaultDepositPercentage = Number(defaultDepositPercentage);
     if (Number.isNaN(defaultDepositPercentage)) {
-      return res.status(400).json({ error: "defaultDepositPercentage inválido" });
+      return res
+        .status(400)
+        .json({ error: "defaultDepositPercentage inválido" });
     }
     if (defaultDepositPercentage < 0) defaultDepositPercentage = 0;
     if (defaultDepositPercentage > 100) defaultDepositPercentage = 100;
