@@ -15,6 +15,9 @@ model Barbershop {
   address                   String?
   phone                     String?
 
+  // ✅ Slug único para link público (ej: /joacobarber)
+  slug                      String           @unique
+
   // Config SaaS
   defaultDepositPercentage  Int              @default(15)  // recomendado 15%
   platformFee               Int              @default(200) // tu comisión por turno (pesos)
