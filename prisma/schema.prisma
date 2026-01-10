@@ -16,7 +16,7 @@ model Barbershop {
   phone                     String?
 
   // ✅ Slug único para link público (ej: /joacobarber)
-  slug                      String           @unique
+  slug                      String?          @unique
 
   // Config SaaS
   defaultDepositPercentage  Int              @default(15)  // recomendado 15%
