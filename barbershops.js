@@ -13,7 +13,7 @@ const router = express.Router();
  */
 function requireAdminKeyIfConfigured(req, res) {
   const key = process.env.PLATFORM_ADMIN_KEY;
-  if (!key) return true; // no configurado => abierto (modo demo)
+  if (!key) return true;
   const sent = req.headers["x-admin-key"];
   if (sent !== key) {
     res.status(401).json({ error: "Falta x-admin-key o es incorrecta" });
@@ -22,159 +22,194 @@ function requireAdminKeyIfConfigured(req, res) {
   return true;
 }
 
+function requireOwner(req, res) {
+  if (!req.user || req.user.role !== "owner") {
+    res.status(403).json({ error: "Solo el dueño puede realizar esta acción" });
+    return false;
+  }
+  return true;
+}
+
+function slugify(input) {
+  return String(input || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
 // Público: lista barberías (demo)
 router.get("/", async (req, res) => {
   try {
     const barbershops = await prisma.barbershop.findMany({
-      select: { id: true, name: true, city: true, address: true, phone: true },
-      orderBy: { id: "asc" },
+      select: { id: true, name: true, city: true, address: true, phone: true, slug: true },
+      orderBy: { createdAt: "desc" },
     });
-    res.json(barbershops);
-  } catch (err) {
-    console.error("Error al obtener barberías:", err);
-    res.status(500).json({ error: "Error al obtener barberías" });
+    return res.json(barbershops);
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Error listando barberías" });
   }
 });
 
-// Público (demo / onboarding manual): crear barbería
+// Crear barbería (admin key opcional)
 router.post("/", async (req, res) => {
   try {
     if (!requireAdminKeyIfConfigured(req, res)) return;
 
-    const { name, city, address, phone } = req.body;
+    const { name, city, address, phone, slug, defaultDepositPercentage, platformFee } = req.body;
 
-    if (!name || !city) {
-      return res
-        .status(400)
-        .json({ error: "Faltan campos obligatorios: name, city" });
+    if (!name) return res.status(400).json({ error: "Falta name" });
+
+    const finalSlug = slug ? slugify(slug) : null;
+
+    if (finalSlug) {
+      const exists = await prisma.barbershop.findUnique({ where: { slug: finalSlug } });
+      if (exists) return res.status(409).json({ error: "Ese slug ya está en uso" });
     }
-
-    // Defaults recomendados
-    const defaultDepositPercentage = 15; // recomendado 15%
-    const platformFee = 200; // tu comisión por turno (pesos)
 
     const created = await prisma.barbershop.create({
       data: {
-        name: String(name).trim(),
-        city: String(city).trim(),
-        address: address ? String(address).trim() : null,
-        phone: phone ? String(phone).trim() : null,
-        defaultDepositPercentage,
-        platformFee,
-      },
-      select: {
-        id: true,
-        name: true,
-        city: true,
-        address: true,
-        phone: true,
-        defaultDepositPercentage: true,
-        platformFee: true,
+        name: String(name),
+        city: city ? String(city) : null,
+        address: address ? String(address) : null,
+        phone: phone ? String(phone) : null,
+        slug: finalSlug,
+        defaultDepositPercentage: defaultDepositPercentage != null ? Number(defaultDepositPercentage) : 15,
+        platformFee: platformFee != null ? Number(platformFee) : 200,
       },
     });
 
-    res.status(201).json(created);
-  } catch (err) {
-    console.error("Error al crear barbería:", err);
-    res.status(500).json({ error: "Error al crear barbería" });
+    return res.json({ ok: true, barbershop: created });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Error creando barbería" });
   }
 });
 
-// ✅ Público: buscar barbería por slug (para link lindo)
-//    (poner arriba de /mine para que no choque)
+// Público: obtener barbería por slug
 router.get("/slug/:slug", async (req, res) => {
   try {
-    const slug = String(req.params.slug || "").toLowerCase().trim();
-    if (!slug) return res.status(400).json({ error: "Falta slug" });
-
-    const bs = await prisma.barbershop.findUnique({
-      where: { slug },
-      select: { id: true, name: true, city: true, slug: true },
-    });
-
-    if (!bs) return res.status(404).json({ error: "Barbería no encontrada" });
-    res.json(bs);
-  } catch (err) {
-    console.error("Error slug:", err);
-    res.status(500).json({ error: "Error interno" });
-  }
-});
-
-// Privado: mi barbería (para panel admin)
-router.get("/mine", auth, async (req, res) => {
-  try {
-    const barbershopId = req.user.barbershopId;
-
-    const barbershop = await prisma.barbershop.findUnique({
-      where: { id: barbershopId },
+    const { slug } = req.params;
+    const shop = await prisma.barbershop.findUnique({
+      where: { slug: String(slug) },
       select: {
         id: true,
         name: true,
         city: true,
         address: true,
         phone: true,
+        slug: true,
         defaultDepositPercentage: true,
-        platformFee: true,
-        slug: true, // ✅ agregado
       },
     });
-
-    if (!barbershop)
-      return res.status(404).json({ error: "Barbería no encontrada" });
-
-    res.json(barbershop);
-  } catch (err) {
-    console.error("Error al obtener mi barbería:", err);
-    res.status(500).json({ error: "Error al obtener mi barbería" });
+    if (!shop) return res.status(404).json({ error: "No encontrada" });
+    return res.json(shop);
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Error obteniendo barbería" });
   }
 });
 
-// Privado: actualizar settings (slider % seña + tu comisión fija)
-router.put("/mine/settings", auth, async (req, res) => {
+// Privado: mi barbería
+router.get("/mine", auth, async (req, res) => {
   try {
-    // Solo owner (por ahora)
-    if (req.user.role !== "owner") {
-      return res.status(403).json({ error: "Sin permisos" });
+    const shop = await prisma.barbershop.findUnique({
+      where: { id: req.user.barbershopId },
+      select: {
+        id: true,
+        name: true,
+        city: true,
+        address: true,
+        phone: true,
+        slug: true,
+        defaultDepositPercentage: true,
+        platformFee: true, // existe pero el admin v2 NO la muestra
+      },
+    });
+    if (!shop) return res.status(404).json({ error: "No encontrada" });
+    return res.json(shop);
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Error obteniendo mi barbería" });
+  }
+});
+
+// Privado: editar datos generales (SIN platformFee)
+router.put("/mine", auth, async (req, res) => {
+  try {
+    if (!requireOwner(req, res)) return;
+
+    const { name, city, address, phone, slug } = req.body;
+
+    let newSlug = undefined;
+    if (slug !== undefined) {
+      const s = slugify(slug);
+      newSlug = s ? s : null;
+
+      if (newSlug) {
+        const exists = await prisma.barbershop.findUnique({ where: { slug: newSlug } });
+        if (exists && exists.id !== req.user.barbershopId) {
+          return res.status(409).json({ error: "Ese slug ya está en uso" });
+        }
+      }
     }
-
-    const barbershopId = req.user.barbershopId;
-
-    // ✅ SOLO permitir cambiar defaultDepositPercentage
-    //    platformFee se ignora aunque venga en el body
-    let { defaultDepositPercentage } = req.body;
-
-    if (defaultDepositPercentage === undefined) {
-      return res.status(400).json({
-        error: "Falta defaultDepositPercentage",
-      });
-    }
-
-    defaultDepositPercentage = Number(defaultDepositPercentage);
-    if (Number.isNaN(defaultDepositPercentage)) {
-      return res
-        .status(400)
-        .json({ error: "defaultDepositPercentage inválido" });
-    }
-    if (defaultDepositPercentage < 0) defaultDepositPercentage = 0;
-    if (defaultDepositPercentage > 100) defaultDepositPercentage = 100;
 
     const updated = await prisma.barbershop.update({
-      where: { id: barbershopId },
+      where: { id: req.user.barbershopId },
       data: {
-        defaultDepositPercentage, // ✅ lo único que se permite guardar
+        ...(name !== undefined ? { name: String(name) } : {}),
+        ...(city !== undefined ? { city: city == null ? null : String(city) } : {}),
+        ...(address !== undefined ? { address: address == null ? null : String(address) } : {}),
+        ...(phone !== undefined ? { phone: phone == null ? null : String(phone) } : {}),
+        ...(slug !== undefined ? { slug: newSlug } : {}),
+        // ⛔ platformFee NO se toca acá
       },
       select: {
         id: true,
         name: true,
+        city: true,
+        address: true,
+        phone: true,
+        slug: true,
         defaultDepositPercentage: true,
-        platformFee: true, // lo dejamos en response por compatibilidad (si tu frontend aún lo lee)
       },
     });
 
-    res.json({ ok: true, barbershop: updated });
-  } catch (err) {
-    console.error("Error al actualizar settings:", err);
-    res.status(500).json({ error: "Error al actualizar settings" });
+    return res.json({ ok: true, barbershop: updated });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Error guardando configuración" });
+  }
+});
+
+// Privado: editar solo seña por defecto (SIN platformFee)
+router.put("/mine/settings", auth, async (req, res) => {
+  try {
+    if (!requireOwner(req, res)) return;
+
+    const { defaultDepositPercentage } = req.body;
+    const pct = Number(defaultDepositPercentage);
+
+    if (Number.isNaN(pct) || pct < 0 || pct > 100) {
+      return res.status(400).json({ error: "defaultDepositPercentage inválido (0-100)" });
+    }
+
+    const updated = await prisma.barbershop.update({
+      where: { id: req.user.barbershopId },
+      data: { defaultDepositPercentage: pct },
+      select: {
+        id: true,
+        defaultDepositPercentage: true,
+      },
+    });
+
+    return res.json({ ok: true, barbershop: updated });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Error guardando seña" });
   }
 });
 
