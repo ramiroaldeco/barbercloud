@@ -1,73 +1,130 @@
 // services.js
-const express = require('express');
-const prisma = require('./prisma');
-const auth = require('./authMiddleware');
+const express = require("express");
+const prisma = require("./prisma");
+const auth = require("./authMiddleware");
 
 const router = express.Router();
 
-// Público: listar servicios (por barbería)
-router.get('/', async (req, res) => {
-  try {
-    const barbershopId = req.query.barbershopId ? Number(req.query.barbershopId) : null;
+function requireOwner(req, res) {
+  if (!req.user || req.user.role !== "owner") {
+    res.status(403).json({ error: "Solo el dueño puede realizar esta acción" });
+    return false;
+  }
+  return true;
+}
 
-    const services = await prisma.service.findMany({
-      where: barbershopId ? { barbershopId } : {},
-      select: {
-        id: true,
-        barbershopId: true,
-        name: true,
-        price: true,
-        durationMinutes: true,
-        depositPercentage: true,
-      },
+// PUBLICO: listar servicios (para booking). Si no mandan barbershopId, devolvemos vacío (seguridad)
+router.get("/", async (req, res) => {
+  try {
+    const { barbershopId } = req.query;
+    if (!barbershopId) return res.json([]); // ⛔ evita filtrar todos los servicios del sistema
+
+    const items = await prisma.service.findMany({
+      where: { barbershopId: String(barbershopId) },
+      orderBy: { createdAt: "asc" },
     });
 
-    res.json(services);
-  } catch (err) {
-    console.error('Error al obtener servicios:', err);
-    res.status(500).json({ error: 'Error al obtener servicios' });
+    return res.json(items);
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Error listando servicios" });
   }
 });
 
-// Privado: crear servicio
-router.post('/', auth, async (req, res) => {
+// PRIVADO: listar mis servicios
+router.get("/mine", auth, async (req, res) => {
   try {
-    if (req.user.role !== 'owner') return res.status(403).json({ error: 'Sin permisos' });
+    const items = await prisma.service.findMany({
+      where: { barbershopId: req.user.barbershopId },
+      orderBy: { createdAt: "asc" },
+    });
+    return res.json(items);
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Error listando mis servicios" });
+  }
+});
 
-    const barbershopId = req.user.barbershopId;
-    let { name, price, durationMinutes, depositPercentage } = req.body;
+// PRIVADO: crear servicio
+router.post("/", auth, async (req, res) => {
+  try {
+    if (!requireOwner(req, res)) return;
 
-    if (!name || price === undefined) return res.status(400).json({ error: 'Faltan datos' });
-
-    price = Number(price);
-    if (Number.isNaN(price) || price < 0) return res.status(400).json({ error: 'price inválido' });
-
-    durationMinutes = durationMinutes === undefined ? 30 : Number(durationMinutes);
-    if (Number.isNaN(durationMinutes) || durationMinutes <= 0) return res.status(400).json({ error: 'durationMinutes inválido' });
-
-    if (depositPercentage !== undefined && depositPercentage !== null && depositPercentage !== '') {
-      depositPercentage = Number(depositPercentage);
-      if (Number.isNaN(depositPercentage)) return res.status(400).json({ error: 'depositPercentage inválido' });
-      if (depositPercentage < 0) depositPercentage = 0;
-      if (depositPercentage > 100) depositPercentage = 100;
-    } else {
-      depositPercentage = null; // usa default de la barbería
+    const { name, price, durationMinutes, depositPercentage, description } = req.body;
+    if (!name || price == null) {
+      return res.status(400).json({ error: "Falta name o price" });
     }
 
-    const service = await prisma.service.create({
+    const created = await prisma.service.create({
       data: {
-        barbershopId,
-        name,
-        price,
-        durationMinutes,
-        depositPercentage,
+        barbershopId: req.user.barbershopId,
+        name: String(name),
+        price: Number(price),
+        durationMinutes: durationMinutes != null ? Number(durationMinutes) : 30,
+        depositPercentage: depositPercentage != null ? Number(depositPercentage) : null,
+        description: description ? String(description) : null,
       },
     });
 
-    res.json({ ok: true, service });
-  } catch (err) {
-    console.error('Error al crear servicio:', err);
-    res.status(500).json({ error: 'Error al crear servicio' });
+    return res.json({ ok: true, service: created });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Error creando servicio" });
+  }
+});
+
+// PRIVADO: editar servicio
+router.put("/:id", auth, async (req, res) => {
+  try {
+    if (!requireOwner(req, res)) return;
+
+    const { id } = req.params;
+    const { name, price, durationMinutes, depositPercentage, description } = req.body;
+
+    const srv = await prisma.service.findUnique({
+      where: { id: String(id) },
+      select: { id: true, barbershopId: true },
+    });
+    if (!srv) return res.status(404).json({ error: "Servicio no encontrado" });
+    if (srv.barbershopId !== req.user.barbershopId) return res.status(403).json({ error: "No autorizado" });
+
+    const updated = await prisma.service.update({
+      where: { id: String(id) },
+      data: {
+        ...(name != null ? { name: String(name) } : {}),
+        ...(price != null ? { price: Number(price) } : {}),
+        ...(durationMinutes != null ? { durationMinutes: Number(durationMinutes) } : {}),
+        ...(depositPercentage !== undefined ? { depositPercentage: depositPercentage == null ? null : Number(depositPercentage) } : {}),
+        ...(description !== undefined ? { description: description == null ? null : String(description) } : {}),
+      },
+    });
+
+    return res.json({ ok: true, service: updated });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Error editando servicio" });
+  }
+});
+
+// PRIVADO: borrar servicio
+router.delete("/:id", auth, async (req, res) => {
+  try {
+    if (!requireOwner(req, res)) return;
+
+    const { id } = req.params;
+
+    const srv = await prisma.service.findUnique({
+      where: { id: String(id) },
+      select: { id: true, barbershopId: true },
+    });
+    if (!srv) return res.status(404).json({ error: "Servicio no encontrado" });
+    if (srv.barbershopId !== req.user.barbershopId) return res.status(403).json({ error: "No autorizado" });
+
+    await prisma.service.delete({ where: { id: String(id) } });
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Error borrando servicio" });
   }
 });
 
