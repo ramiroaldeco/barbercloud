@@ -24,22 +24,26 @@ const app = express();
  */
 const corsOptions = {
   origin: function (origin, cb) {
-    if (!origin) return cb(null, true); // Postman/curl
+    if (!origin) return cb(null, true); // Postman/curl/server-to-server
 
-    // ✅ permite Vercel (cualquier proyecto .vercel.app)
+    // ✅ Vercel (cualquier subdominio)
     if (origin.endsWith(".vercel.app")) return cb(null, true);
 
-    // ✅ local dev
-    if (origin === "http://localhost:5500" || origin === "http://127.0.0.1:5500")
-      return cb(null, true);
-
-    // (opcional) mantener GitHub Pages si lo seguís usando
+    // ✅ GitHub Pages (si lo seguís usando)
     if (origin === "https://ramiroaldeco.github.io") return cb(null, true);
+
+    // ✅ Local dev (5500 y cualquier puerto)
+    if (
+      origin === "http://localhost:5500" ||
+      origin === "http://127.0.0.1:5500" ||
+      origin.startsWith("http://localhost:") ||
+      origin.startsWith("http://127.0.0.1:")
+    ) return cb(null, true);
 
     return cb(new Error("CORS bloqueado para: " + origin), false);
   },
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-admin-key"],
   credentials: true,
 };
 
