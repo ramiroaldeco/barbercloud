@@ -25,6 +25,9 @@ model Barbershop {
   services                  Service[]
   appointments              Appointment[]
   users                     BarbershopUser[]
+
+  // ✅ NUEVO
+  workingHours              WorkingHour[]
 }
 
 model Service {
@@ -90,4 +93,17 @@ model BarbershopUser {
   role         String     @default("owner")
 
   createdAt    DateTime   @default(now())
+}
+
+model WorkingHour {
+  id           Int        @id @default(autoincrement())
+  barbershopId Int
+  barbershop   Barbershop @relation(fields: [barbershopId], references: [id])
+
+  weekday      Int        // 0=Dom ... 6=Sáb
+  startTime    String     // "10:00"
+  endTime      String     // "13:30"
+
+  @@index([barbershopId, weekday])
+  @@unique([barbershopId, weekday, startTime, endTime])
 }
