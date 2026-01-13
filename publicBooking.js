@@ -66,6 +66,26 @@ async function computeSlots({ barbershopId, serviceId, date, step = 15 }) {
     return { service, slots: [] };
   }
 
+  // ✅ 4.1 Traer bloqueos del día (vacaciones / franjas bloqueadas)
+  // Pegado justo después de: if (!ranges.length) return ...
+  const blocks = await prisma.blockedTime.findMany({
+    where: {
+      barbershopId: Number(barbershopId),
+      dateFrom: { lte: date },
+      OR: [{ dateTo: null }, { dateTo: { gte: date } }],
+    },
+    select: { startTime: true, endTime: true },
+  });
+
+  // si hay un bloqueo día completo => no hay slots
+  if (blocks.some(b => !b.startTime && !b.endTime)) {
+    return { service, slots: [] };
+  }
+
+  const blockedIntervals = blocks
+    .filter(b => b.startTime && b.endTime)
+    .map(b => ({ start: toMin(b.startTime), end: toMin(b.endTime) }));
+
   // Turnos existentes del día (ignorar cancelados)
   const appts = await prisma.appointment.findMany({
     where: {
@@ -114,8 +134,11 @@ async function computeSlots({ barbershopId, serviceId, date, step = 15 }) {
       const candStart = t;
       const candEnd = t + duration;
 
-      const conflict = occupied.some(o => overlaps(candStart, candEnd, o.start, o.end));
-      if (!conflict) slots.push(toTime(candStart));
+      // ✅ 4.2 Excluir slots que choquen con bloqueos
+      const conflictAppt = occupied.some(o => overlaps(candStart, candEnd, o.start, o.end));
+      const conflictBlock = blockedIntervals.some(b => overlaps(candStart, candEnd, b.start, b.end));
+
+      if (!conflictAppt && !conflictBlock) slots.push(toTime(candStart));
     }
   }
 
