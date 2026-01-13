@@ -21,9 +21,12 @@ router.get("/", auth, async (req, res) => {
   try {
     const { from, to, status, q } = req.query;
 
-    const where = {
-      barbershopId: req.user.barbershopId,
-    };
+    const myBarbershopId = req.user?.barbershopId;
+    if (typeof myBarbershopId !== "number" || Number.isNaN(myBarbershopId)) {
+      return res.status(400).json({ error: "Token inválido: falta barbershopId" });
+    }
+
+    const where = { barbershopId: myBarbershopId };
 
     if (status) where.status = String(status);
 
@@ -49,8 +52,7 @@ router.get("/", auth, async (req, res) => {
       },
     });
 
-    // ⛔ NO cambiamos formato: devolvemos array (compatible con lo actual)
-    return res.json(items);
+    return res.json(items); // mantenemos array
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: "Error listando turnos" });
@@ -66,14 +68,12 @@ router.get("/public", async (req, res) => {
     const { barbershopId } = req.query;
     if (!barbershopId) return res.status(400).json({ error: "Falta barbershopId" });
 
+    const shopId = Number(barbershopId);
+    if (Number.isNaN(shopId)) return res.status(400).json({ error: "barbershopId inválido" });
+
     const items = await prisma.appointment.findMany({
-      where: { barbershopId: String(barbershopId) },
-      select: {
-        id: true,
-        date: true,
-        time: true,
-        status: true,
-      },
+      where: { barbershopId: shopId },
+      select: { id: true, date: true, time: true, status: true },
       orderBy: [{ date: "asc" }, { time: "asc" }],
     });
 
@@ -81,6 +81,96 @@ router.get("/public", async (req, res) => {
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: "Error obteniendo turnos públicos" });
+  }
+});
+
+// =========================
+// ✅ PRIVADO (OWNER): crear turno manual desde admin
+// POST /api/appointments/owner
+// body: { serviceId, date, time, customerName, customerPhone?, customerEmail?, notes?, status? }
+// =========================
+router.post("/owner", auth, async (req, res) => {
+  try {
+    if (!requireOwner(req, res)) return;
+
+    const myBarbershopId = req.user?.barbershopId;
+    if (typeof myBarbershopId !== "number" || Number.isNaN(myBarbershopId)) {
+      return res.status(400).json({ error: "Token inválido: falta barbershopId" });
+    }
+
+    const {
+      serviceId,
+      date,
+      time,
+      customerName,
+      customerPhone,
+      customerEmail,
+      notes,
+      status,
+    } = req.body;
+
+    if (!serviceId || !date || !time || !customerName) {
+      return res.status(400).json({ error: "Faltan campos obligatorios" });
+    }
+
+    const srvId = Number(serviceId);
+    if (Number.isNaN(srvId)) return res.status(400).json({ error: "serviceId inválido" });
+
+    // evitar doble reserva (pending o confirmed)
+    const existing = await prisma.appointment.findFirst({
+      where: {
+        barbershopId: myBarbershopId,
+        date: String(date),
+        time: String(time),
+        status: { in: ["pending", "confirmed"] },
+      },
+      select: { id: true },
+    });
+    if (existing) return res.status(409).json({ error: "Ese horario ya está reservado" });
+
+    const shop = await prisma.barbershop.findUnique({
+      where: { id: myBarbershopId },
+      select: { defaultDepositPercentage: true, platformFee: true },
+    });
+    if (!shop) return res.status(404).json({ error: "Barbería no encontrada" });
+
+    const service = await prisma.service.findUnique({
+      where: { id: srvId },
+      select: { id: true, price: true, depositPercentage: true, name: true },
+    });
+    if (!service) return res.status(404).json({ error: "Servicio no encontrado" });
+
+    const depositPct =
+      service.depositPercentage != null ? service.depositPercentage : shop.defaultDepositPercentage;
+
+    const price = Number(service.price || 0);
+    const fee = Number(shop.platformFee || 200);
+    const depositAmount = Math.round((price * Number(depositPct || 0)) / 100 + fee);
+
+    const allowedStatus = new Set(["pending", "confirmed", "canceled"]);
+    const finalStatus = allowedStatus.has(String(status)) ? String(status) : "pending";
+
+    const created = await prisma.appointment.create({
+      data: {
+        barbershopId: myBarbershopId,
+        serviceId: srvId,
+        date: String(date),
+        time: String(time),
+        customerName: String(customerName),
+        customerPhone: customerPhone ? String(customerPhone) : "",
+        customerEmail: customerEmail ? String(customerEmail) : null,
+        notes: notes ? String(notes) : null,
+        status: finalStatus,
+        paymentStatus: "unpaid",
+        depositAmount,
+        platformFee: fee,
+      },
+    });
+
+    return res.json({ ok: true, appointment: created, depositAmount, depositPct });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Error creando turno (owner)" });
   }
 });
 
@@ -105,10 +195,15 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ error: "Faltan campos obligatorios" });
     }
 
-    // evitar doble reserva
+    const shopId = Number(barbershopId);
+    const srvId = Number(serviceId);
+    if (Number.isNaN(shopId) || Number.isNaN(srvId)) {
+      return res.status(400).json({ error: "IDs inválidos" });
+    }
+
     const existing = await prisma.appointment.findFirst({
       where: {
-        barbershopId: String(barbershopId),
+        barbershopId: shopId,
         date: String(date),
         time: String(time),
         status: { in: ["pending", "confirmed"] },
@@ -118,13 +213,13 @@ router.post("/", async (req, res) => {
     if (existing) return res.status(409).json({ error: "Ese horario ya está reservado" });
 
     const shop = await prisma.barbershop.findUnique({
-      where: { id: String(barbershopId) },
+      where: { id: shopId },
       select: { defaultDepositPercentage: true, platformFee: true },
     });
     if (!shop) return res.status(404).json({ error: "Barbería no encontrada" });
 
     const service = await prisma.service.findUnique({
-      where: { id: String(serviceId) },
+      where: { id: srvId },
       select: { id: true, price: true, depositPercentage: true, name: true },
     });
     if (!service) return res.status(404).json({ error: "Servicio no encontrado" });
@@ -133,13 +228,13 @@ router.post("/", async (req, res) => {
       service.depositPercentage != null ? service.depositPercentage : shop.defaultDepositPercentage;
 
     const price = Number(service.price || 0);
-    const fee = Number(shop.platformFee || 200); // interno
+    const fee = Number(shop.platformFee || 200);
     const depositAmount = Math.round((price * Number(depositPct || 0)) / 100 + fee);
 
     const created = await prisma.appointment.create({
       data: {
-        barbershopId: String(barbershopId),
-        serviceId: String(serviceId),
+        barbershopId: shopId,
+        serviceId: srvId,
         date: String(date),
         time: String(time),
         customerName: String(customerName),
@@ -153,12 +248,7 @@ router.post("/", async (req, res) => {
       },
     });
 
-    return res.json({
-      ok: true,
-      appointment: created,
-      depositAmount,
-      depositPct,
-    });
+    return res.json({ ok: true, appointment: created, depositAmount, depositPct });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: "Error creando turno" });
@@ -181,9 +271,11 @@ router.put("/:id/status", auth, async (req, res) => {
       return res.status(400).json({ error: "Estado inválido" });
     }
 
-    // asegurar pertenencia
+    const apptId = Number(id);
+    if (Number.isNaN(apptId)) return res.status(400).json({ error: "ID inválido" });
+
     const appt = await prisma.appointment.findUnique({
-      where: { id: String(id) },
+      where: { id: apptId },
       select: { id: true, barbershopId: true },
     });
 
@@ -193,7 +285,7 @@ router.put("/:id/status", auth, async (req, res) => {
     }
 
     const updated = await prisma.appointment.update({
-      where: { id: String(id) },
+      where: { id: apptId },
       data: { status: String(status) },
     });
 
