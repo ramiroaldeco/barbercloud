@@ -9,6 +9,8 @@ const barbershopsRoutes = require("./barbershops");
 const servicesRoutes = require("./services");
 const appointmentsRoutes = require("./appointments");
 const onboardingRoutes = require("./onboarding");
+const workingHoursRoutes = require("./workingHours");
+
 
 const app = express();
 
@@ -71,6 +73,8 @@ app.use("/api/onboarding", onboardingRoutes);
 app.use("/api/barbershops", barbershopsRoutes);
 app.use("/api/services", servicesRoutes);
 app.use("/api/appointments", appointmentsRoutes);
+app.use("/api/working-hours", workingHoursRoutes);
+
 
 /**
  * =========================
