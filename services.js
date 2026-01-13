@@ -18,25 +18,21 @@ function toIntOrNull(v) {
   if (v === undefined || v === null || v === "") return null;
   const n = Number(v);
   if (!Number.isFinite(n)) return null;
-  const i = Math.trunc(n);
-  if (String(i) !== String(n) && !Number.isInteger(n)) return null; // por si viene decimal raro
-  return i;
+  return Math.trunc(n);
 }
 
-// PUBLICO: listar servicios (para booking).
-// Si no mandan barbershopId, devolvemos vacío (seguridad)
+// PUBLICO: listar servicios (para booking). Si no mandan barbershopId, devolvemos vacío (seguridad)
 router.get("/", async (req, res) => {
   try {
     const { barbershopId } = req.query;
     if (!barbershopId) return res.json([]); // ⛔ evita filtrar todos los servicios del sistema
 
-    // ✅ barbershopId es Int en DB
     const bsId = toIntOrNull(barbershopId);
-    if (bsId == null) return res.json([]); // si viene mal, devolvemos vacío por seguridad
+    if (bsId == null) return res.json([]); // seguridad
 
     const items = await prisma.service.findMany({
       where: { barbershopId: bsId },
-      orderBy: { createdAt: "asc" },
+      orderBy: { id: "asc" }, // ✅ FIX: no existe createdAt en tu modelo
     });
 
     return res.json(items);
@@ -70,7 +66,7 @@ router.get("/mine", auth, async (req, res) => {
     // 3) Listar servicios de esa barbería
     const items = await prisma.service.findMany({
       where: { barbershopId: myBarbershopId },
-      orderBy: { createdAt: "asc" },
+      orderBy: { id: "asc" }, // ✅ FIX: no existe createdAt en tu modelo
     });
 
     return res.json({ items });
@@ -98,7 +94,7 @@ router.post("/", auth, async (req, res) => {
 
     const created = await prisma.service.create({
       data: {
-        barbershopId: myBarbershopId, // ✅ Int
+        barbershopId: myBarbershopId, // ✅ Int (sin String)
         name: String(name),
         price: Number(price),
         durationMinutes: durationMinutes != null ? Number(durationMinutes) : 30,
@@ -122,24 +118,21 @@ router.put("/:id", auth, async (req, res) => {
     const { id } = req.params;
     const { name, price, durationMinutes, depositPercentage, description } = req.body;
 
-    const myShopId = req.user?.barbershopId; // ✅ Int
+    const myShopId = req.user?.barbershopId; // ✅ sin String()
 
     if (typeof myShopId !== "number" || isNaN(myShopId)) {
       return res.status(400).json({ error: "Token inválido: falta barbershopId" });
     }
 
-    const serviceId = toIntOrNull(id);
-    if (serviceId == null) return res.status(400).json({ error: "ID inválido" });
-
     const srv = await prisma.service.findUnique({
-      where: { id: serviceId }, // ✅ Int
+      where: { id: Number(id) }, // ✅ id a Int
       select: { id: true, barbershopId: true },
     });
     if (!srv) return res.status(404).json({ error: "Servicio no encontrado" });
     if (srv.barbershopId !== myShopId) return res.status(403).json({ error: "No autorizado" });
 
     const updated = await prisma.service.update({
-      where: { id: serviceId }, // ✅ Int
+      where: { id: Number(id) }, // ✅ id a Int
       data: {
         ...(name != null ? { name: String(name) } : {}),
         ...(price != null ? { price: Number(price) } : {}),
@@ -147,9 +140,7 @@ router.put("/:id", auth, async (req, res) => {
         ...(depositPercentage !== undefined
           ? { depositPercentage: depositPercentage == null ? null : Number(depositPercentage) }
           : {}),
-        ...(description !== undefined
-          ? { description: description == null ? null : String(description) }
-          : {}),
+        ...(description !== undefined ? { description: description == null ? null : String(description) } : {}),
       },
     });
 
@@ -167,22 +158,20 @@ router.delete("/:id", auth, async (req, res) => {
 
     const { id } = req.params;
 
-    const myShopId = req.user?.barbershopId; // ✅ Int
+    const myShopId = req.user?.barbershopId; // ✅ sin String()
+
     if (typeof myShopId !== "number" || isNaN(myShopId)) {
       return res.status(400).json({ error: "Token inválido: falta barbershopId" });
     }
 
-    const serviceId = toIntOrNull(id);
-    if (serviceId == null) return res.status(400).json({ error: "ID inválido" });
-
     const srv = await prisma.service.findUnique({
-      where: { id: serviceId }, // ✅ Int
+      where: { id: Number(id) }, // ✅ id a Int
       select: { id: true, barbershopId: true },
     });
     if (!srv) return res.status(404).json({ error: "Servicio no encontrado" });
     if (srv.barbershopId !== myShopId) return res.status(403).json({ error: "No autorizado" });
 
-    await prisma.service.delete({ where: { id: serviceId } }); // ✅ Int
+    await prisma.service.delete({ where: { id: Number(id) } }); // ✅ id a Int
     return res.json({ ok: true });
   } catch (e) {
     console.error("DELETE /services/:id ERROR:", e);
