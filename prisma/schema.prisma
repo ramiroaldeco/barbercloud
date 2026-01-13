@@ -36,6 +36,9 @@ model Service {
   price           Int        // pesos enteros
   durationMinutes Int        @default(30)
 
+  // ✅ NUEVO
+  description     String?
+
   // si es null, usa el defaultDepositPercentage de la barbería
   depositPercentage Int?
 
@@ -49,6 +52,11 @@ model Appointment {
 
   customerName  String
   customerPhone String
+
+  // ✅ NUEVO
+  customerEmail String?
+  notes         String?
+
   date          String
   time          String
 
