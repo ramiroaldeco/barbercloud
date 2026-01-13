@@ -45,7 +45,7 @@ router.get("/", async (req, res) => {
   try {
     const barbershops = await prisma.barbershop.findMany({
       select: { id: true, name: true, city: true, address: true, phone: true, slug: true },
-      orderBy: { id: "desc" },
+      orderBy: { id: "desc" }, // ✅ en lugar de createdAt
     });
     return res.json(barbershops);
   } catch (e) {
