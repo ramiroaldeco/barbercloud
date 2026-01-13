@@ -107,3 +107,22 @@ model WorkingHour {
   @@index([barbershopId, weekday])
   @@unique([barbershopId, weekday, startTime, endTime])
 }
+
+model BlockedTime {
+  id           Int        @id @default(autoincrement())
+  barbershopId Int
+  barbershop   Barbershop @relation(fields: [barbershopId], references: [id])
+
+  // ISO "YYYY-MM-DD"
+  dateFrom     String
+  dateTo       String?    // si es null => solo ese día
+
+  // si son null => día completo bloqueado
+  startTime    String?    // "HH:MM"
+  endTime      String?    // "HH:MM"
+
+  reason       String?
+  createdAt    DateTime   @default(now())
+
+  @@index([barbershopId, dateFrom, dateTo])
+}
