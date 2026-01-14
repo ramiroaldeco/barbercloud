@@ -27,6 +27,7 @@ model Barbershop {
   users                     BarbershopUser[]
 
   // ✅ NUEVO
+  blockedTimes              BlockedTime[]
   workingHours              WorkingHour[]
 }
 
