@@ -14,9 +14,7 @@ CREATE TABLE IF NOT EXISTS "BlockedTime" (
 DO $$
 BEGIN
   IF NOT EXISTS (
-    SELECT 1
-    FROM pg_constraint
-    WHERE conname = 'BlockedTime_barbershopId_fkey'
+    SELECT 1 FROM pg_constraint WHERE conname = 'BlockedTime_barbershopId_fkey'
   ) THEN
     ALTER TABLE "BlockedTime"
     ADD CONSTRAINT "BlockedTime_barbershopId_fkey"
@@ -29,8 +27,7 @@ END$$;
 DO $$
 BEGIN
   IF NOT EXISTS (
-    SELECT 1
-    FROM pg_indexes
+    SELECT 1 FROM pg_indexes
     WHERE indexname = 'BlockedTime_barbershopId_dateFrom_dateTo_idx'
   ) THEN
     CREATE INDEX "BlockedTime_barbershopId_dateFrom_dateTo_idx"
