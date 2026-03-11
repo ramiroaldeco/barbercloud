@@ -144,8 +144,9 @@ router.post("/owner", auth, async (req, res) => {
       service.depositPercentage != null ? service.depositPercentage : shop.defaultDepositPercentage;
 
     const price = Number(service.price || 0);
-    const fee = Number(shop.platformFee || 200);
-    const depositAmount = Math.round((price * Number(depositPct || 0)) / 100 + fee);
+    const fee = Number(shop.platformFee ?? 200);
+    const depositAmount = Math.round((price * Number(depositPct || 0)) / 100);
+    const totalToPay = depositAmount + fee;
 
     const allowedStatus = new Set(["pending", "confirmed", "canceled"]);
     const finalStatus = allowedStatus.has(String(status)) ? String(status) : "pending";
@@ -162,12 +163,14 @@ router.post("/owner", auth, async (req, res) => {
         notes: notes ? String(notes) : null,
         status: finalStatus,
         paymentStatus: "unpaid",
+        depositPercentageAtBooking: Number(depositPct || 0),
         depositAmount,
         platformFee: fee,
+        totalToPay,
       },
     });
 
-    return res.json({ ok: true, appointment: created, depositAmount, depositPct });
+    return res.json({ ok: true, appointment: created, depositAmount, depositPct, platformFee: fee, totalToPay });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: "Error creando turno (owner)" });
@@ -228,8 +231,9 @@ router.post("/", async (req, res) => {
       service.depositPercentage != null ? service.depositPercentage : shop.defaultDepositPercentage;
 
     const price = Number(service.price || 0);
-    const fee = Number(shop.platformFee || 200);
-    const depositAmount = Math.round((price * Number(depositPct || 0)) / 100 + fee);
+    const fee = Number(shop.platformFee ?? 200);
+    const depositAmount = Math.round((price * Number(depositPct || 0)) / 100);
+    const totalToPay = depositAmount + fee;
 
     const created = await prisma.appointment.create({
       data: {
@@ -243,12 +247,14 @@ router.post("/", async (req, res) => {
         notes: notes ? String(notes) : null,
         status: "pending",
         paymentStatus: "unpaid",
+        depositPercentageAtBooking: Number(depositPct || 0),
         depositAmount,
         platformFee: fee,
+        totalToPay,
       },
     });
 
-    return res.json({ ok: true, appointment: created, depositAmount, depositPct });
+    return res.json({ ok: true, appointment: created, depositAmount, depositPct, platformFee: fee, totalToPay });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: "Error creando turno" });

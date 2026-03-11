@@ -44,6 +44,22 @@ async function main() {
     });
   }
 
+  // 4) Working hours demo (Lun-Sáb 10:00-20:00)
+  const existingHours = await prisma.workingHour.findMany({ where: { barbershopId: barbershop.id } });
+
+  if (existingHours.length === 0) {
+    const defaultHours = [];
+    for (let wd = 1; wd <= 6; wd++) {
+      defaultHours.push({
+        barbershopId: barbershop.id,
+        weekday: wd,
+        startTime: "10:00",
+        endTime: "20:00",
+      });
+    }
+    await prisma.workingHour.createMany({ data: defaultHours });
+  }
+
   console.log('✅ Seed completado');
 }
 

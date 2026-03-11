@@ -45,7 +45,7 @@ function overlaps(aStart, aEnd, bStart, bEnd) {
 async function computeSlots({ barbershopId, serviceId, date, step = 15 }) {
   const service = await prisma.service.findFirst({
     where: { id: Number(serviceId), barbershopId: Number(barbershopId) },
-    select: { id: true, durationMinutes: true, name: true, price: true },
+    select: { id: true, durationMinutes: true, name: true, price: true, depositPercentage: true },
   });
   if (!service) {
     const err = new Error("Servicio no encontrado para esta barbería");
@@ -242,11 +242,11 @@ router.post("/:slug/book", async (req, res) => {
       return res.status(409).json({ error: "Ese horario ya no está disponible" });
     }
 
-    // totalToPay / deposit: por ahora “snapshot” básico
-    const depositPct = shop.defaultDepositPercentage || 15;
+    // totalToPay / deposit: snapshot al momento de reservar
+    const depositPct = out.service.depositPercentage ?? shop.defaultDepositPercentage ?? 15;
     const servicePrice = out.service.price || 0;
     const depositAmount = Math.round((servicePrice * depositPct) / 100);
-    const platformFee = shop.platformFee || 0;
+    const platformFee = shop.platformFee ?? 0;
     const totalToPay = depositAmount + platformFee;
 
     const created = await prisma.appointment.create({

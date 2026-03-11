@@ -119,6 +119,18 @@ router.post("/signup", async (req, res) => {
         ],
       });
 
+      // ✅ Horarios por defecto (Lun-Sáb 10:00–20:00) para que el booking funcione desde el primer día
+      const defaultHours = [];
+      for (let wd = 1; wd <= 6; wd++) { // 1=Lun ... 6=Sáb (Domingo cerrado)
+        defaultHours.push({
+          barbershopId: barbershop.id,
+          weekday: wd,
+          startTime: "10:00",
+          endTime: "20:00",
+        });
+      }
+      await tx.workingHour.createMany({ data: defaultHours });
+
       return { barbershop, user };
     });
 
