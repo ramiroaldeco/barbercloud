@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "nodemon server.js",
     "start": "node server.js",
-    "build": "npx prisma generate && npx prisma migrate resolve --rolled-back 20260114_create_blocked_time && npx prisma migrate deploy",
+    "build": "npx prisma generate && npx prisma migrate resolve --applied 20260114_create_blocked_time && npx prisma migrate deploy",
     "prisma:migrate": "npx prisma migrate dev",
     "prisma:generate": "npx prisma generate",
     "prisma:studio": "npx prisma studio",
