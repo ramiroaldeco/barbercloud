@@ -1,0 +1,555 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>BarberCloud - Crear cuenta</title>
+
+  <link rel="stylesheet" href="./styles.css" />
+  <!-- Si ya usás components.css en el resto del sitio, dejalo así (recomendado). -->
+  <link rel="stylesheet" href="./components.css" />
+
+  <!-- Estilos solo para Signup (no rompe nada del resto) -->
+  <style>
+    :root{
+      --bc-bg: rgba(2,6,23,1);
+      --bc-panel: rgba(6,10,24,.92);
+      --bc-panel2: rgba(15,23,42,.72);
+      --bc-border: rgba(148,163,184,.20);
+      --bc-text: rgba(226,232,240,.95);
+      --bc-muted: rgba(148,163,184,.95);
+      --bc-cyan: rgba(56,189,248,1);
+      --bc-cyan-soft: rgba(56,189,248,.14);
+      --bc-shadow: 0 28px 80px rgba(2,6,23,.85);
+      --bc-radius: 22px;
+    }
+
+    body.app {
+      background:
+        radial-gradient(900px 520px at 18% 10%, rgba(56,189,248,.14), transparent 60%),
+        radial-gradient(820px 520px at 80% 0%, rgba(56,189,248,.10), transparent 55%),
+        radial-gradient(1000px 700px at 55% 60%, rgba(148,163,184,.10), transparent 55%),
+        linear-gradient(180deg, rgba(2,6,23,1), rgba(2,6,23,1));
+      color: var(--bc-text);
+      min-height: 100vh;
+    }
+
+    /* Layout */
+    .auth-shell{
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 28px 16px;
+    }
+
+    .auth-container{
+      width: min(1060px, 100%);
+      display: grid;
+      gap: 18px;
+      align-items: start;
+    }
+
+    @media (min-width: 980px){
+      .auth-container{
+        grid-template-columns: minmax(0, .92fr) minmax(0, 1.08fr);
+        gap: 22px;
+      }
+    }
+
+    /* Left info panel (inspiración wizard) */
+    .auth-side{
+      border-radius: var(--bc-radius);
+      background:
+        radial-gradient(circle at top left, rgba(56,189,248,.12), transparent 60%),
+        rgba(6,10,24,.90);
+      border: 1px solid var(--bc-border);
+      box-shadow: var(--bc-shadow);
+      padding: 22px 22px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .auth-side::after{
+      content:"";
+      position:absolute;
+      inset:-2px;
+      background: radial-gradient(520px 260px at 20% 20%, rgba(56,189,248,.10), transparent 55%);
+      pointer-events:none;
+    }
+
+    .brand-row{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap: 12px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .brand{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      text-decoration:none;
+      color: var(--bc-text);
+    }
+
+    .brand-mark{
+      width: 36px;
+      height: 36px;
+      border-radius: 14px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-weight: 800;
+      background: radial-gradient(circle at top left, rgba(56,189,248,.75), rgba(56,189,248,.14));
+      border: 1px solid rgba(56,189,248,.30);
+      box-shadow: 0 18px 40px rgba(56,189,248,.10);
+    }
+
+    .brand-name{
+      font-weight: 800;
+      letter-spacing: .2px;
+    }
+
+    .step-pill{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(56,189,248,.28);
+      background: rgba(2,6,23,.35);
+      color: rgba(226,232,240,.92);
+      font-size: .86rem;
+      white-space: nowrap;
+    }
+
+    .auth-side h1{
+      margin: 14px 0 8px 0;
+      font-size: clamp(1.6rem, 2.4vw, 2.1rem);
+      line-height: 1.1;
+      position: relative;
+      z-index: 1;
+    }
+
+    .auth-side p{
+      margin: 0;
+      color: var(--bc-muted);
+      line-height: 1.6;
+      position: relative;
+      z-index: 1;
+    }
+
+    .side-list{
+      margin-top: 16px;
+      display:grid;
+      gap:10px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .side-item{
+      display:flex;
+      gap:10px;
+      align-items:flex-start;
+      padding: 12px 12px;
+      border-radius: 16px;
+      border: 1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.35);
+    }
+
+    .side-dot{
+      width: 28px;
+      height: 28px;
+      border-radius: 12px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-weight: 800;
+      background: rgba(56,189,248,.12);
+      border: 1px solid rgba(56,189,248,.22);
+      color: rgba(226,232,240,.92);
+      flex: 0 0 auto;
+      margin-top: 1px;
+    }
+
+    .side-item strong{
+      display:block;
+      font-size: .95rem;
+      margin-bottom: 2px;
+    }
+
+    .side-item span{
+      display:block;
+      color: rgba(148,163,184,.95);
+      font-size: .92rem;
+      line-height: 1.35;
+    }
+
+    .side-note{
+      margin-top: 14px;
+      padding: 12px 12px;
+      border-radius: 16px;
+      border: 1px solid rgba(56,189,248,.20);
+      background: rgba(56,189,248,.08);
+      color: rgba(226,232,240,.92);
+      font-size: .92rem;
+      line-height: 1.5;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Main card (form) */
+    .auth-card{
+      border-radius: var(--bc-radius);
+      background:
+        radial-gradient(circle at top left, rgba(56,189,248,.10), transparent 60%),
+        rgba(6,10,24,.92);
+      border: 1px solid var(--bc-border);
+      box-shadow: var(--bc-shadow);
+      padding: 22px 22px;
+    }
+
+    .auth-head{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .auth-head h2{
+      margin: 0;
+      font-size: 1.25rem;
+      letter-spacing: .2px;
+    }
+
+    .auth-sub{
+      margin: 8px 0 0 0;
+      color: var(--bc-muted);
+      line-height: 1.55;
+      font-size: .95rem;
+    }
+
+    .section-tag{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(148,163,184,.18);
+      background: rgba(15,23,42,.55);
+      color: rgba(226,232,240,.92);
+      font-size: .86rem;
+      white-space: nowrap;
+    }
+
+    /* Form */
+    #signupForm{
+      margin-top: 14px;
+      display:grid;
+      gap: 14px;
+    }
+
+    .form-block{
+      padding: 14px 14px;
+      border-radius: 18px;
+      border: 1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.28);
+    }
+
+    .form-title{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .form-title h3{
+      margin: 0;
+      font-size: 1rem;
+    }
+
+    .req{
+      display:inline-flex;
+      align-items:center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(56,189,248,.22);
+      background: rgba(56,189,248,.08);
+      color: rgba(226,232,240,.92);
+      font-size: .82rem;
+      white-space: nowrap;
+    }
+
+    .grid{
+      display:grid;
+      gap: 12px;
+    }
+
+    @media (min-width: 720px){
+      .grid.two{
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    .field{
+      display:flex;
+      flex-direction:column;
+      gap: 6px;
+    }
+
+    .field label{
+      font-size: .78rem;
+      font-weight: 650;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: rgba(226,232,240,.82);
+    }
+
+    .field input{
+      width: 100%;
+      padding: 12px 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(148,163,184,.40);
+      background: rgba(15,23,42,.86);
+      color: rgba(226,232,240,.95);
+      outline: none;
+      font-size: .96rem;
+      transition: border-color .15s ease, box-shadow .15s ease, transform .05s ease, background .15s ease;
+    }
+
+    .field input::placeholder{
+      color: rgba(148,163,184,.85);
+    }
+
+    .field input:focus{
+      border-color: rgba(56,189,248,.95);
+      box-shadow: 0 0 0 1px rgba(56,189,248,.55);
+      background: rgba(15,23,42,.96);
+      transform: translateY(-1px);
+    }
+
+    .helper{
+      margin-top: 2px;
+      color: rgba(148,163,184,.92);
+      font-size: .86rem;
+      line-height: 1.4;
+    }
+
+    .divider{
+      height: 1px;
+      background: rgba(148,163,184,.16);
+      margin: 12px 0;
+    }
+
+    .actions{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 4px;
+    }
+
+    /* Respetamos tu clase btn-primary; solo le damos un wrapper prolijo */
+    #btnCreate{
+      border-radius: 999px;
+      padding: 12px 16px;
+      min-width: 200px;
+      box-shadow: 0 20px 44px rgba(56,189,248,.10);
+    }
+
+    .msg{
+      margin: 0;
+      color: var(--bc-muted);
+      font-size: .92rem;
+      line-height: 1.5;
+    }
+
+    .login-link{
+      margin: 0;
+      color: var(--bc-muted);
+      font-size: .92rem;
+    }
+
+    .login-link a{
+      color: rgba(56,189,248,.92);
+      text-decoration: none;
+      border-bottom: 1px solid rgba(56,189,248,.30);
+    }
+
+    .login-link a:hover{
+      border-bottom-color: rgba(56,189,248,.60);
+    }
+
+    /* Mobile: que el botón ocupe todo */
+    @media (max-width: 560px){
+      #btnCreate{
+        width: 100%;
+      }
+      .actions{
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+
+<body class="app">
+  <div class="auth-shell">
+    <div class="auth-container">
+
+      <!-- Panel izquierdo (inspiración “configurá tu empresa”) -->
+      <aside class="auth-side" aria-label="Resumen de configuración">
+        <div class="brand-row">
+          <a class="brand" href="./index.html" aria-label="Volver al inicio">
+            <span class="brand-mark">B</span>
+            <span class="brand-name">BarberCloud</span>
+          </a>
+
+          <span class="step-pill">Configuración inicial</span>
+        </div>
+
+        <h1>Creá tu empresa en minutos</h1>
+        <p>
+          Cargá los datos básicos para empezar a recibir turnos. Después vas a poder
+          ajustar seña, comisión, horarios, servicios y todo lo demás desde el panel.
+        </p>
+
+        <div class="side-list">
+          <div class="side-item">
+            <span class="side-dot">1</span>
+            <div>
+              <strong>Datos del negocio</strong>
+              <span>Nombre, ciudad y datos opcionales.</span>
+            </div>
+          </div>
+          <div class="side-item">
+            <span class="side-dot">2</span>
+            <div>
+              <strong>Usuario dueño</strong>
+              <span>Acceso al panel para administrar turnos.</span>
+            </div>
+          </div>
+          <div class="side-item">
+            <span class="side-dot">✓</span>
+            <div>
+              <strong>Listo para vender turnos</strong>
+              <span>Link para compartir y agenda ordenada.</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="side-note">
+          Recomendado: empezar con seña del <b>15%</b> para reducir cancelaciones. Podés cambiarlo después.
+        </div>
+      </aside>
+
+      <!-- Card principal (form) -->
+      <main class="auth-card">
+        <div class="auth-head">
+          <div>
+            <h2>Crear cuenta gratis</h2>
+            <p class="auth-sub">
+              Creás tu barbería + tu usuario dueño en 1 paso. Después podés ajustar la seña (recomendado 15%)
+              y tu comisión por turno.
+            </p>
+          </div>
+          <span class="section-tag">1 paso · alta rápida</span>
+        </div>
+
+        <!-- IMPORTANTE: no tocamos el ID del form -->
+        <form id="signupForm">
+          <!-- Bloque: Barbería -->
+          <section class="form-block" aria-label="Datos de la barbería">
+            <div class="form-title">
+              <h3>Datos de la barbería</h3>
+              <span class="req">Obligatorio</span>
+            </div>
+
+            <div class="grid">
+              <div class="field">
+                <label>Nombre de la barbería</label>
+                <input name="shopName" placeholder="Barbería ..." required />
+              </div>
+            </div>
+
+            <div class="grid two" style="margin-top:12px;">
+              <div class="field">
+                <label>Ciudad</label>
+                <input name="city" placeholder="Córdoba" required />
+              </div>
+
+              <div class="field">
+                <label>Teléfono (opcional)</label>
+                <input name="phone" placeholder="3534..." />
+                <div class="helper">Si lo cargás, queda para contacto/recordatorios.</div>
+              </div>
+            </div>
+
+            <div class="grid" style="margin-top:12px;">
+              <div class="field">
+                <label>Dirección (opcional)</label>
+                <input name="address" placeholder="San Martín 123" />
+                <div class="helper">Podés completarla más adelante si querés.</div>
+              </div>
+            </div>
+          </section>
+
+          <div class="divider"></div>
+
+          <!-- Bloque: Dueño -->
+          <section class="form-block" aria-label="Datos del dueño">
+            <div class="form-title">
+              <h3>Datos del dueño</h3>
+              <span class="req">Obligatorio</span>
+            </div>
+
+            <div class="grid two">
+              <div class="field">
+                <label>Nombre y apellido</label>
+                <input name="ownerName" placeholder="Juan Pérez" required />
+              </div>
+
+              <div class="field">
+                <label>Email</label>
+                <input name="email" type="email" placeholder="juan@barberia.com" required />
+              </div>
+            </div>
+
+            <div class="grid" style="margin-top:12px;">
+              <div class="field">
+                <label>Contraseña</label>
+                <input name="password" type="password" placeholder="Mínimo 6 caracteres" required />
+                <div class="helper">Usala para entrar al panel y administrar tu agenda.</div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Acciones -->
+          <div class="actions">
+            <button class="btn-primary" type="submit" id="btnCreate">
+              Crear cuenta
+            </button>
+
+            <!-- IMPORTANTE: mantenemos el ID msg -->
+            <p id="msg" class="msg"></p>
+
+           <p class="login-link">
+  ¿Ya tenés cuenta? <a href="./admin_v2.html#/agenda">Ingresar al panel</a>
+</p>
+
+
+          </div>
+        </form>
+      </main>
+    </div>
+  </div>
+
+  <script src="./config.js"></script>
+  <script src="./signup.js" defer></script>
+</body>
+</html>
