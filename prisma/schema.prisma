@@ -29,6 +29,7 @@ model Barbershop {
   // ✅ NUEVO
   blockedTimes              BlockedTime[]
   workingHours              WorkingHour[]
+  barbers                   Barber[]
 }
 
 model Service {
