@@ -43,6 +43,8 @@ model Service {
   // ✅ NUEVO
   description     String?
 
+  barbers         Barber[]
+
   // si es null, usa el defaultDepositPercentage de la barbería
   depositPercentage Int?
 
@@ -53,6 +55,7 @@ model Appointment {
   id            Int      @id @default(autoincrement())
   barbershopId  Int
   serviceId     Int
+  barberId      Int
 
   customerName  String
   customerPhone String
@@ -70,17 +73,18 @@ model Appointment {
 
   // snapshot al momento de reservar
   depositPercentageAtBooking Int @default(0)
-  depositAmount              Int @default(0) // pesos
-  platformFee                Int @default(0) // pesos (tu comisión)
-  totalToPay                 Int @default(0) // deposit + platformFee
+  servicePrice               Int @default(0) // precio del servicio base
+  depositAmount              Int @default(0) // pesos (lo que paga el cliente hoy, si 0, paga todo en el local)
+  platformFee                Int @default(0) // pesos (tu comisión, oculto a la barbería)
 
   createdAt     DateTime @default(now())
 
   barbershop    Barbershop @relation(fields: [barbershopId], references: [id])
   service       Service    @relation(fields: [serviceId], references: [id])
+  barber        Barber     @relation(fields: [barberId], references: [id])
 
-  // ✅ Evita doble reserva: misma barbería + mismo día + misma hora
-  @@unique([barbershopId, date, time])
+  // ✅ Evita doble reserva exacta en el mismo barbero e igual hora (aunque la lógica fuerte va por Node.js)
+  @@unique([barberId, date, time])
 }
 
 model BarbershopUser {
@@ -126,4 +130,49 @@ model BlockedTime {
   createdAt    DateTime   @default(now())
 
   @@index([barbershopId, dateFrom, dateTo])
+}
+
+// ════════════ MÓDULO DE MIEMBROS ════════════
+
+model Barber {
+  id           Int        @id @default(autoincrement())
+  barbershopId Int
+  barbershop   Barbershop @relation(fields: [barbershopId], references: [id])
+  
+  name         String
+  avatarBase64 String?    @db.Text
+  role         String     @default("Barbero")
+  isActive     Boolean    @default(true)
+  
+  // Relaciones
+  services     Service[]
+  appointments Appointment[]
+  workingHours BarberWorkingHour[]
+  blockedTimes BarberBlockedTime[]
+
+  createdAt    DateTime   @default(now())
+}
+
+model BarberWorkingHour {
+  id        Int    @id @default(autoincrement())
+  barberId  Int
+  barber    Barber @relation(fields: [barberId], references: [id], onDelete: Cascade)
+  
+  weekday   Int    // 0=Dom ... 6=Sáb
+  startTime String // "09:00"
+  endTime   String // "13:00"
+  
+  @@unique([barberId, weekday, startTime, endTime])
+}
+
+model BarberBlockedTime {
+  id        Int     @id @default(autoincrement())
+  barberId  Int
+  barber    Barber  @relation(fields: [barberId], references: [id], onDelete: Cascade)
+  
+  dateFrom  String  // ISO YYYY-MM-DD
+  dateTo    String? // Opcional para múltiples días
+  startTime String? // "14:00" Opcional
+  endTime   String? // "18:00" Opcional
+  reason    String?
 }
