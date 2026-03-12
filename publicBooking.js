@@ -249,10 +249,25 @@ router.post("/:slug/book", async (req, res) => {
     const platformFee = shop.platformFee ?? 0;
     const totalToPay = depositAmount + platformFee;
 
+    // Búsqueda o creación de un barbero por defecto para la Fase 1
+    let defaultBarber = await prisma.barber.findFirst({
+      where: { barbershopId: shop.id, isActive: true },
+    });
+    if (!defaultBarber) {
+      defaultBarber = await prisma.barber.create({
+        data: {
+          barbershopId: shop.id,
+          name: "Barbero General",
+          role: "General",
+        }
+      });
+    }
+
     const created = await prisma.appointment.create({
       data: {
         barbershopId: shop.id,
         serviceId: out.service.id,
+        barberId: defaultBarber.id,
         date: String(date),
         time: String(time),
         customerName: String(customerName).trim(),
@@ -262,9 +277,9 @@ router.post("/:slug/book", async (req, res) => {
         status: "pending",
         paymentStatus: "unpaid",
         depositPercentageAtBooking: depositPct,
+        servicePrice,
         depositAmount,
         platformFee,
-        totalToPay,
       },
       select: { id: true },
     });

@@ -151,26 +151,41 @@ router.post("/owner", auth, async (req, res) => {
     const allowedStatus = new Set(["pending", "confirmed", "canceled"]);
     const finalStatus = allowedStatus.has(String(status)) ? String(status) : "pending";
 
+    // Búsqueda o creación de un barbero por defecto para la Fase 1
+    let defaultBarber = await prisma.barber.findFirst({
+      where: { barbershopId: shopId, isActive: true },
+    });
+    if (!defaultBarber) {
+      defaultBarber = await prisma.barber.create({
+        data: {
+          barbershopId: shopId,
+          name: "Barbero General",
+          role: "General",
+        }
+      });
+    }
+
     const created = await prisma.appointment.create({
       data: {
-        barbershopId: myBarbershopId,
+        barbershopId: shopId,
         serviceId: srvId,
+        barberId: defaultBarber.id,
         date: String(date),
         time: String(time),
         customerName: String(customerName),
-        customerPhone: customerPhone ? String(customerPhone) : "",
+        customerPhone: String(customerPhone),
         customerEmail: customerEmail ? String(customerEmail) : null,
         notes: notes ? String(notes) : null,
-        status: finalStatus,
+        status: "pending",
         paymentStatus: "unpaid",
         depositPercentageAtBooking: Number(depositPct || 0),
+        servicePrice: price,
         depositAmount,
         platformFee: fee,
-        totalToPay,
       },
     });
 
-    return res.json({ ok: true, appointment: created, depositAmount, depositPct, platformFee: fee, totalToPay });
+    return res.json({ ok: true, appointment: created, depositAmount, depositPct, platformFee: fee, servicePrice: price });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: "Error creando turno (owner)" });
@@ -235,10 +250,25 @@ router.post("/", async (req, res) => {
     const depositAmount = Math.round((price * Number(depositPct || 0)) / 100);
     const totalToPay = depositAmount + fee;
 
+    // Búsqueda o creación de un barbero por defecto para la Fase 1
+    let defaultBarber = await prisma.barber.findFirst({
+      where: { barbershopId: shopId, isActive: true },
+    });
+    if (!defaultBarber) {
+      defaultBarber = await prisma.barber.create({
+        data: {
+          barbershopId: shopId,
+          name: "Barbero General",
+          role: "General",
+        }
+      });
+    }
+
     const created = await prisma.appointment.create({
       data: {
         barbershopId: shopId,
         serviceId: srvId,
+        barberId: defaultBarber.id,
         date: String(date),
         time: String(time),
         customerName: String(customerName),
@@ -248,13 +278,13 @@ router.post("/", async (req, res) => {
         status: "pending",
         paymentStatus: "unpaid",
         depositPercentageAtBooking: Number(depositPct || 0),
+        servicePrice: price,
         depositAmount,
         platformFee: fee,
-        totalToPay,
       },
     });
 
-    return res.json({ ok: true, appointment: created, depositAmount, depositPct, platformFee: fee, totalToPay });
+    return res.json({ ok: true, appointment: created, depositAmount, depositPct, platformFee: fee, servicePrice: price });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: "Error creando turno" });
