@@ -42,6 +42,7 @@ const views = {
   servicios: $("view-servicios"),
   horarios: $("view-horarios"),
   config: $("view-config"),
+  miembros: $("view-miembros"),
 };
 
 const pageTitle = $("pageTitle");
@@ -85,6 +86,11 @@ function showView(route) {
     if (pageTitle) pageTitle.textContent = "Clientes";
     if (pageSubtitle) pageSubtitle.textContent = "Historial y búsqueda";
     loadClients();
+  }
+  if (route === "miembros") {
+    if (pageTitle) pageTitle.textContent = "Equipo";
+    if (pageSubtitle) pageSubtitle.textContent = "Tus barberos y plantillas horarias";
+    loadMembers();
   }
 }
 
@@ -1268,6 +1274,296 @@ document.addEventListener("click", (e) => {
   const b = e.target.closest("#btnAddBlock");
   if (!b) return;
   openAddBlockModal();
+});
+
+// ===============================
+// 7. MÓDULO DE MIEMBROS
+// ===============================
+async function loadMembers() {
+  const grid = $("membersGrid");
+  if (!grid) return;
+  
+  grid.innerHTML = `<div class="muted">Cargando equipo...</div>`;
+  try {
+    const res = await apiGet("/members");
+    const members = res.members || [];
+    
+    // Solo mostramos barberos activos
+    const activeMembers = members.filter(m => m.isActive);
+    
+    if (!activeMembers.length) {
+      grid.innerHTML = `<div class="muted">Todavía no agregaste a nadie a tu equipo.</div>`;
+      return;
+    }
+    
+    grid.innerHTML = activeMembers.map(m => {
+      const avatarSrc = m.avatarBase64 || "https://ui-avatars.com/api/?name=" + encodeURIComponent(m.name) + "&background=1e293b&color=38bdf8";
+      const servicesNames = m.services.map(s => s.name).join(", ") || "Sin servicios";
+      return `
+        <div class="card" style="display:flex; flex-direction:column; gap:16px;">
+          <div style="display:flex; align-items:center; gap:12px;">
+            <img src="${avatarSrc}" alt="${escapeAttr(m.name)}" style="width:60px; height:60px; border-radius:50%; object-fit:cover; border:2px solid var(--border-h);" />
+            <div>
+              <h3 style="margin:0">${escapeHtml(m.name)}</h3>
+              <p class="muted" style="margin:4px 0 0; font-size:13px;">${escapeHtml(m.role)}</p>
+            </div>
+          </div>
+          <div>
+            <p style="font-size:13px; margin:0"><b>Servicios:</b> <span class="muted">${escapeHtml(servicesNames)}</span></p>
+          </div>
+          <div style="margin-top:auto; display:flex; gap:8px; flex-wrap:wrap">
+            <button class="btn" data-edit-member="${m.id}" style="flex:1">Editar</button>
+            <button class="btn" data-schedule-member="${m.id}" style="flex:1; background:var(--surface);">Horarios</button>
+            <button class="icon-btn" data-del-member="${m.id}" style="color:#ef4444" title="Desactivar">✕</button>
+          </div>
+        </div>
+      `;
+    }).join("");
+    
+    window._cachedMembers = members;
+  } catch (err) {
+    grid.innerHTML = `<div class="muted">Error: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+// Convert File to WebP Base64 (max 150x150)
+function compressImageToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (e) => {
+      const img = new Image();
+      img.src = e.target.result;
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const MAX_SIZE = 150;
+        let w = img.width;
+        let h = img.height;
+        if (w > h) {
+          if (w > MAX_SIZE) { h *= MAX_SIZE / w; w = MAX_SIZE; }
+        } else {
+          if (h > MAX_SIZE) { w *= MAX_SIZE / h; h = MAX_SIZE; }
+        }
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/webp", 0.8));
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+}
+
+$("btnNewMember")?.addEventListener("click", async () => {
+  let services = [];
+  try {
+    const sRes = await apiGet("/services/mine");
+    services = sRes.items || sRes || [];
+  } catch(e) {}
+  
+  const servicesHtml = services.map(s => `
+    <label style="display:flex; align-items:center; gap:8px; font-size:14px;">
+      <input type="checkbox" name="memServices" value="${s.id}" checked />
+      <span>${escapeHtml(s.name)}</span>
+    </label>
+  `).join("");
+
+  const res = await openModal({
+    title: "Nuevo Miembro",
+    subtitle: "Agregá un profesional a tu equipo",
+    bodyHtml: `
+      <div style="display:flex; gap:16px; align-items:center; margin-bottom:16px;">
+        <div id="avatarPreview" style="width:70px; height:70px; border-radius:50%; background:var(--surface); border:2px dashed var(--border); display:flex; align-items:center; justify-content:center; overflow:hidden;">
+          <span class="muted" style="font-size:12px;">Foto</span>
+        </div>
+        <div style="flex:1">
+          <label class="label">Foto de perfil (opcional)</label>
+          <input type="file" id="memFile" accept="image/*" class="input" style="padding:6px; font-size:12px;" />
+        </div>
+      </div>
+      <label class="label">Nombre</label>
+      <input id="memName" class="input" placeholder="Ej: Carlos" />
+      <label class="label">Rol / Especialidad</label>
+      <input id="memRole" class="input" placeholder="Ej: Barbero Senior" value="Barbero" />
+      <label class="label" style="margin-top:16px;">Servicios asignados</label>
+      <div style="display:flex; flex-direction:column; gap:6px; background:var(--surface); padding:10px; border-radius:8px; border:1px solid var(--border);">
+        ${servicesHtml || '<span class="muted" style="font-size:13px">Creá servicios primero.</span>'}
+      </div>
+    `,
+    okText: "Guardar",
+  });
+  
+  if (!res?.ok) return;
+  
+  const name = $("memName")?.value || "";
+  const role = $("memRole")?.value || "";
+  const fileInput = $("memFile");
+  
+  let avatarBase64 = null;
+  if (fileInput && fileInput.files && fileInput.files[0]) {
+    try { avatarBase64 = await compressImageToBase64(fileInput.files[0]); } catch (err) {}
+  }
+  
+  const servicesIds = Array.from(document.querySelectorAll('input[name="memServices"]:checked')).map(el => el.value);
+  
+  try {
+    await apiPost("/members", { name, role, avatarBase64, servicesIds });
+    await loadMembers();
+  } catch (err) { alert("Error: " + err.message); }
+});
+
+document.addEventListener("change", async (e) => {
+  if (e.target.id === "memFile" && e.target.files?.length) {
+    const preview = $("avatarPreview");
+    if (preview) {
+      try {
+        const b64 = await compressImageToBase64(e.target.files[0]);
+        preview.innerHTML = `<img src="${b64}" style="width:100%; height:100%; object-fit:cover;" />`;
+        preview.style.border = "2px solid var(--cyan)";
+      } catch (err) {}
+    }
+  }
+});
+
+$("membersGrid")?.addEventListener("click", async (e) => {
+  const editBtn = e.target.closest("[data-edit-member]");
+  const delBtn = e.target.closest("[data-del-member]");
+  const schBtn = e.target.closest("[data-schedule-member]");
+  
+  if (delBtn) {
+    const id = delBtn.dataset.delMember;
+    if (!confirm("¿Desactivar barbero? Ya no recibirá turnos nuevos.")) return;
+    try {
+      await apiDelete("/members/" + id);
+      await loadMembers();
+    } catch (err) { alert("Error: " + err.message); }
+    return;
+  }
+  
+  if (editBtn) {
+    const id = editBtn.dataset.editMember;
+    const m = (window._cachedMembers || []).find(x => String(x.id) === id);
+    if (!m) return;
+    
+    let services = [];
+    try { const sRes = await apiGet("/services/mine"); services = sRes.items || sRes || []; } catch(err) {}
+    const mServiceIds = m.services.map(s => Number(s.id));
+    
+    const servicesHtml = services.map(s => `
+      <label style="display:flex; align-items:center; gap:8px; font-size:14px;">
+        <input type="checkbox" name="memServices" value="${s.id}" ${mServiceIds.includes(s.id) ? "checked" : ""} />
+        <span>${escapeHtml(s.name)}</span>
+      </label>
+    `).join("");
+
+    const currentImg = m.avatarBase64 ? `<img src="${m.avatarBase64}" style="width:100%; height:100%; object-fit:cover;" />` : `<span class="muted" style="font-size:12px;">Foto</span>`;
+    
+    const res = await openModal({
+      title: "Editar Miembro",
+      subtitle: escapeHtml(m.name),
+      bodyHtml: `
+        <div style="display:flex; gap:16px; align-items:center; margin-bottom:16px;">
+          <div id="avatarPreview" style="width:70px; height:70px; border-radius:50%; background:var(--surface); border:2px dashed var(--border); display:flex; align-items:center; justify-content:center; overflow:hidden;">
+            ${currentImg}
+          </div>
+          <div style="flex:1">
+            <label class="label">Reemplazar Foto</label>
+            <input type="file" id="memFile" accept="image/*" class="input" style="padding:6px; font-size:12px;" />
+          </div>
+        </div>
+        <label class="label">Nombre</label>
+        <input id="memName" class="input" value="${escapeAttr(m.name)}" />
+        <label class="label">Rol / Especialidad</label>
+        <input id="memRole" class="input" value="${escapeAttr(m.role)}" />
+        <label class="label" style="margin-top:16px;">Servicios</label>
+        <div style="display:flex; flex-direction:column; gap:6px; background:var(--surface); padding:10px; border-radius:8px; border:1px solid var(--border);">
+          ${servicesHtml}
+        </div>
+      `,
+      okText: "Guardar",
+    });
+    
+    if (!res?.ok) return;
+    
+    const name = $("memName")?.value || "";
+    const role = $("memRole")?.value || "";
+    let avatarBase64 = undefined;
+    const fileInput = $("memFile");
+    if (fileInput && fileInput.files && fileInput.files[0]) {
+      try { avatarBase64 = await compressImageToBase64(fileInput.files[0]); } catch (err) {}
+    }
+    const servicesIds = Array.from(document.querySelectorAll('input[name="memServices"]:checked')).map(el => el.value);
+    
+    try {
+      await apiPut("/members/" + id, { name, role, avatarBase64, servicesIds });
+      await loadMembers();
+    } catch (err) { alert("Error: " + err.message); }
+    return;
+  }
+  
+  if (schBtn) {
+    const id = schBtn.dataset.scheduleMember;
+    const m = (window._cachedMembers || []).find(x => String(x.id) === id);
+    if (!m) return;
+    
+    const daysHtml = WEEKDAYS.map(d => {
+      const hrs = m.workingHours.filter(wh => wh.weekday === d.i);
+      const hasHours = hrs.length > 0;
+      const startObj = hrs[0]?.startTime || "10:00";
+      const endObj = hrs[hrs.length - 1]?.endTime || "20:00";
+      
+      return `
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px; background:var(--surface); padding:10px; border-radius:8px; border:1px solid var(--border);">
+          <div style="width:100px; display:flex; align-items:center; gap:8px;">
+            <input type="checkbox" id="chk_${d.i}" class="day-check" data-day="${d.i}" ${hasHours ? "checked" : ""} />
+            <label style="font-weight:600; font-size:14px;" for="chk_${d.i}">${d.name}</label>
+          </div>
+          <div style="flex:1; display:flex; gap:10px; align-items:center;">
+            <input type="time" class="input day-start" id="start_${d.i}" value="${hasHours ? startObj : "10:00"}" ${hasHours ? "" : "disabled"} style="padding:4px 8px; font-size:13px;" />
+            <span class="muted">a</span>
+            <input type="time" class="input day-end" id="end_${d.i}" value="${hasHours ? endObj : "20:00"}" ${hasHours ? "" : "disabled"} style="padding:4px 8px; font-size:13px;" />
+          </div>
+        </div>
+      `;
+    }).join("");
+    
+    const res = await openModal({
+      title: "Horarios",
+      subtitle: escapeHtml(m.name),
+      bodyHtml: `<div style="margin-bottom:16px;">${daysHtml}</div>`,
+      okText: "Guardar Horarios"
+    });
+    
+    if (!res?.ok) return;
+    
+    const schedule = [];
+    document.querySelectorAll(".day-check").forEach(chk => {
+      if (chk.checked) {
+        const d = chk.dataset.day;
+        const sTime = $("start_" + d)?.value;
+        const eTime = $("end_" + d)?.value;
+        if (sTime && eTime) schedule.push({ weekday: d, startTime: sTime, endTime: eTime });
+      }
+    });
+    
+    try {
+      await apiPut("/members/" + id + "/schedule", { schedule });
+      await loadMembers();
+      alert("Horarios guardados ✅");
+    } catch(err) { alert("Error guardando horario: " + err.message); }
+  }
+});
+
+document.addEventListener("change", (e) => {
+  if (e.target.classList.contains("day-check")) {
+    const d = e.target.dataset.day;
+    const startObj = $("start_" + d);
+    const endObj = $("end_" + d);
+    if (startObj) startObj.disabled = !e.target.checked;
+    if (endObj) endObj.disabled = !e.target.checked;
+  }
 });
 
 // init

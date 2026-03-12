@@ -13,6 +13,7 @@ const workingHoursRoutes = require("./workingHours");
 const publicBookingRoutes = require("./publicBooking");
 const blockedTimesRoutes = require("./blockedTimes");
 const clientsRoutes = require("./clients");
+const membersRoutes = require("./members");
 
 const app = express();
 
@@ -54,7 +55,8 @@ const corsOptions = {
 // ⬇️ IMPORTANTE: CORS y preflight ANTES de las rutas
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions)); // ✅ habilita preflight
-app.use(express.json());
+// Aumentar el límite a 20mb para soportar imágenes en Base64 de las fotos de los Miembros
+app.use(express.json({ limit: "20mb" }));
 
 /**
  * =========================
@@ -79,6 +81,7 @@ app.use("/api/working-hours", workingHoursRoutes);
 app.use("/api/public", publicBookingRoutes);
 app.use("/api/blocked-times", blockedTimesRoutes);
 app.use("/api/clients", clientsRoutes);
+app.use("/api/members", membersRoutes);
 
 /**
  * =========================

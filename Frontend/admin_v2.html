@@ -79,6 +79,7 @@
       <nav class="nav">
         <a href="#/agenda" class="nav-item" data-route="agenda">Agenda</a>
         <a href="#/clientes" class="nav-item" data-route="clientes">Clientes</a>
+        <a href="#/miembros" class="nav-item" data-route="miembros">Miembros</a>
         <a href="#/servicios" class="nav-item" data-route="servicios">Servicios</a>
         <a href="#/horarios" class="nav-item" data-route="horarios">Plantilla Horaria</a>
         <a href="#/config" class="nav-item" data-route="config">Configuración</a>
@@ -275,6 +276,24 @@
                 </table>
               </div>
               <div class="empty" id="clientsEmpty" style="display:none;">No hay clientes todavía.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- MIEMBROS -->
+        <div class="view" id="view-miembros" style="display:none;">
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h2>Miembros del Equipo</h2>
+                <p class="muted">Agregá barberos, subí su foto y configurá sus horarios</p>
+              </div>
+              <div class="actions">
+                <button class="btn primary" id="btnNewMember">+ Nuevo miembro</button>
+              </div>
+            </div>
+
+            <div class="card-body" id="membersGrid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap:16px;">
             </div>
           </div>
         </div>
