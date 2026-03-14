@@ -2,6 +2,7 @@
 const express = require("express");
 const prisma = require("./prisma");
 const auth = require("./authMiddleware");
+const { computeSlots } = require("./publicBooking");
 
 const router = express.Router();
 
@@ -100,6 +101,7 @@ router.post("/owner", auth, async (req, res) => {
 
     const {
       serviceId,
+      barberId,
       date,
       time,
       customerName,
@@ -109,24 +111,25 @@ router.post("/owner", auth, async (req, res) => {
       status,
     } = req.body;
 
-    if (!serviceId || !date || !time || !customerName) {
+    if (!serviceId || !barberId || !date || !time || !customerName) {
       return res.status(400).json({ error: "Faltan campos obligatorios" });
     }
 
     const srvId = Number(serviceId);
-    if (Number.isNaN(srvId)) return res.status(400).json({ error: "serviceId inválido" });
+    const brbId = Number(barberId);
+    if (Number.isNaN(srvId) || Number.isNaN(brbId)) return res.status(400).json({ error: "IDs inválidos" });
 
-    // evitar doble reserva (pending o confirmed)
-    const existing = await prisma.appointment.findFirst({
-      where: {
-        barbershopId: myBarbershopId,
-        date: String(date),
-        time: String(time),
-        status: { in: ["pending", "confirmed"] },
-      },
-      select: { id: true },
+    // Verificar disponibilidad matemática estricta calculada (Fase 2)
+    const out = await computeSlots({
+      barbershopId: myBarbershopId,
+      barberId: brbId,
+      serviceId: srvId,
+      date: String(date)
     });
-    if (existing) return res.status(409).json({ error: "Ese horario ya está reservado" });
+
+    if (!out.slots.includes(String(time))) {
+       return res.status(409).json({ error: "Ese horario generaría superposiciones o no cumple las franjas del barbero" });
+    }
 
     const shop = await prisma.barbershop.findUnique({
       where: { id: myBarbershopId },
@@ -151,32 +154,18 @@ router.post("/owner", auth, async (req, res) => {
     const allowedStatus = new Set(["pending", "confirmed", "canceled"]);
     const finalStatus = allowedStatus.has(String(status)) ? String(status) : "pending";
 
-    // Búsqueda o creación de un barbero por defecto para la Fase 1
-    let defaultBarber = await prisma.barber.findFirst({
-      where: { barbershopId: shopId, isActive: true },
-    });
-    if (!defaultBarber) {
-      defaultBarber = await prisma.barber.create({
-        data: {
-          barbershopId: shopId,
-          name: "Barbero General",
-          role: "General",
-        }
-      });
-    }
-
     const created = await prisma.appointment.create({
       data: {
-        barbershopId: shopId,
+        barbershopId: myBarbershopId,
         serviceId: srvId,
-        barberId: defaultBarber.id,
+        barberId: brbId,
         date: String(date),
         time: String(time),
         customerName: String(customerName),
-        customerPhone: String(customerPhone),
+        customerPhone: customerPhone ? String(customerPhone) : null,
         customerEmail: customerEmail ? String(customerEmail) : null,
         notes: notes ? String(notes) : null,
-        status: "pending",
+        status: finalStatus,
         paymentStatus: "unpaid",
         depositPercentageAtBooking: Number(depositPct || 0),
         servicePrice: price,
@@ -201,6 +190,7 @@ router.post("/", async (req, res) => {
     const {
       barbershopId,
       serviceId,
+      barberId,
       date,
       time,
       customerName,
@@ -209,26 +199,27 @@ router.post("/", async (req, res) => {
       notes,
     } = req.body;
 
-    if (!barbershopId || !serviceId || !date || !time || !customerName || !customerPhone) {
+    if (!barbershopId || !serviceId || !barberId || !date || !time || !customerName || !customerPhone) {
       return res.status(400).json({ error: "Faltan campos obligatorios" });
     }
 
     const shopId = Number(barbershopId);
     const srvId = Number(serviceId);
-    if (Number.isNaN(shopId) || Number.isNaN(srvId)) {
+    const brbId = Number(barberId);
+    if (Number.isNaN(shopId) || Number.isNaN(srvId) || Number.isNaN(brbId)) {
       return res.status(400).json({ error: "IDs inválidos" });
     }
 
-    const existing = await prisma.appointment.findFirst({
-      where: {
-        barbershopId: shopId,
-        date: String(date),
-        time: String(time),
-        status: { in: ["pending", "confirmed"] },
-      },
-      select: { id: true },
+    const out = await computeSlots({
+      barbershopId: shopId,
+      barberId: brbId,
+      serviceId: srvId,
+      date: String(date)
     });
-    if (existing) return res.status(409).json({ error: "Ese horario ya está reservado" });
+
+    if (!out.slots.includes(String(time))) {
+       return res.status(409).json({ error: "Ese horario se superpone o no cumple las franjas del barbero" });
+    }
 
     const shop = await prisma.barbershop.findUnique({
       where: { id: shopId },
@@ -250,25 +241,11 @@ router.post("/", async (req, res) => {
     const depositAmount = Math.round((price * Number(depositPct || 0)) / 100);
     const totalToPay = depositAmount + fee;
 
-    // Búsqueda o creación de un barbero por defecto para la Fase 1
-    let defaultBarber = await prisma.barber.findFirst({
-      where: { barbershopId: shopId, isActive: true },
-    });
-    if (!defaultBarber) {
-      defaultBarber = await prisma.barber.create({
-        data: {
-          barbershopId: shopId,
-          name: "Barbero General",
-          role: "General",
-        }
-      });
-    }
-
     const created = await prisma.appointment.create({
       data: {
         barbershopId: shopId,
         serviceId: srvId,
-        barberId: defaultBarber.id,
+        barberId: brbId,
         date: String(date),
         time: String(time),
         customerName: String(customerName),

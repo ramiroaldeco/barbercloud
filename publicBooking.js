@@ -41,8 +41,14 @@ function overlaps(aStart, aEnd, bStart, bEnd) {
   return aStart < bEnd && aEnd > bStart;
 }
 
-// ---------- core: compute slots ----------
-async function computeSlots({ barbershopId, serviceId, date, step = 15 }) {
+// ---------- core: compute slots (Barber-Centric Continuous Engine) ----------
+async function computeSlots({ barbershopId, barberId, serviceId, date }) {
+  if (!barberId) {
+    const err = new Error("Falta barberId para calcular turnos");
+    err.status = 400;
+    throw err;
+  }
+
   const service = await prisma.service.findFirst({
     where: { id: Number(serviceId), barbershopId: Number(barbershopId) },
     select: { id: true, durationMinutes: true, name: true, price: true, depositPercentage: true },
@@ -55,19 +61,18 @@ async function computeSlots({ barbershopId, serviceId, date, step = 15 }) {
 
   const wd = weekdayFromISO(date);
 
-  const ranges = await prisma.workingHour.findMany({
-    where: { barbershopId: Number(barbershopId), weekday: wd },
+  // Buscar franjas de ESTE barbero (reemplaza old workingHour)
+  const ranges = await prisma.barberWorkingHour.findMany({
+    where: { barberId: Number(barberId), weekday: wd },
     orderBy: { startTime: "asc" },
     select: { startTime: true, endTime: true },
   });
 
-  // Si está cerrado
   if (!ranges.length) {
-    return { service, slots: [] };
+    return { service, slots: [] }; // Barbero cerrado ese día
   }
 
-  // ✅ 4.1 Traer bloqueos del día (vacaciones / franjas bloqueadas)
-  // Pegado justo después de: if (!ranges.length) return ...
+  // Buscar bloqueos explícitos (ausencias por vacaciones o cortes manuales)
   const blocks = await prisma.blockedTime.findMany({
     where: {
       barbershopId: Number(barbershopId),
@@ -77,19 +82,18 @@ async function computeSlots({ barbershopId, serviceId, date, step = 15 }) {
     select: { startTime: true, endTime: true },
   });
 
-  // si hay un bloqueo día completo => no hay slots
   if (blocks.some(b => !b.startTime && !b.endTime)) {
-    return { service, slots: [] };
+    return { service, slots: [] }; // Bloqueo de día completo
   }
 
   const blockedIntervals = blocks
     .filter(b => b.startTime && b.endTime)
     .map(b => ({ start: toMin(b.startTime), end: toMin(b.endTime) }));
 
-  // Turnos existentes del día (ignorar cancelados)
+  // Buscar los turnos ya ocupados de ESTE barbero en ESA fecha
   const appts = await prisma.appointment.findMany({
     where: {
-      barbershopId: Number(barbershopId),
+      barberId: Number(barberId), // Filtro clave Fase 2
       date,
       NOT: { status: "canceled" },
     },
@@ -105,7 +109,8 @@ async function computeSlots({ barbershopId, serviceId, date, step = 15 }) {
       const s = toMin(a.time);
       const dur = Number(a.service?.durationMinutes || 30);
       return { start: s, end: s + dur };
-    });
+    })
+    .sort((a, b) => a.start - b.start); // Ordenar cronológicamente vital para el algoritmo
 
   const duration = Number(service.durationMinutes || 30);
   const slots = [];
@@ -116,29 +121,47 @@ async function computeSlots({ barbershopId, serviceId, date, step = 15 }) {
   for (const r of ranges) {
     if (!isValidTime(r.startTime) || !isValidTime(r.endTime)) continue;
 
-    let start = toMin(r.startTime);
+    let cursor = toMin(r.startTime);
     const end = toMin(r.endTime);
 
-    // último inicio posible para que entre la duración
-    const lastStart = end - duration;
-    if (lastStart < start) continue;
-
-    // si hoy, no ofrecer horas pasadas (con un margen de 0)
-    if (isToday && start < minNow) {
-      start = minNow;
-      // redondeo al step
-      start = Math.ceil(start / step) * step;
+    // Si es hoy, el cursor no puede iniciar en el pasado
+    if (isToday && cursor < minNow) {
+      cursor = minNow; 
     }
 
-    for (let t = start; t <= lastStart; t += step) {
-      const candStart = t;
-      const candEnd = t + duration;
+    // Iterar la franja laboral hasta que ya no quede espacio para un turno completo
+    while (cursor + duration <= end) {
+      const candStart = cursor;
+      const candEnd = cursor + duration;
 
-      // ✅ 4.2 Excluir slots que choquen con bloqueos
-      const conflictAppt = occupied.some(o => overlaps(candStart, candEnd, o.start, o.end));
-      const conflictBlock = blockedIntervals.some(b => overlaps(candStart, candEnd, b.start, b.end));
+      // 1. Verificar si choca con algún bloqueo manual
+      const isBlocked = blockedIntervals.some(b => overlaps(candStart, candEnd, b.start, b.end));
+      
+      if (isBlocked) {
+         // Salto heurístico: avanzar el cursor al final del bloqueo para buscar del otro lado (simplificación por array length)
+         cursor += duration; // Forzamos avance lineal 
+         continue;
+      }
 
-      if (!conflictAppt && !conflictBlock) slots.push(toTime(candStart));
+      // 2. Verificar si choca con algún turno ocupado existente
+      // Buscamos el primer turno ocupado que intercepte o viva de acá en más
+      const upcomingAppt = occupied.find(o => candStart < o.end && candEnd > o.start);
+
+      if (upcomingAppt) {
+        // ¿Entra el servicio *antes* de que empiece este turno ocupado?
+        if (candEnd <= upcomingAppt.start) {
+            slots.push(toTime(candStart));
+            cursor += duration; // Avance perfecto simbiótico
+        } else {
+            // No entra. Hubo colisión.
+            // Regla Fase 2 estricta: Saltamos el cursor EXACTAMENTE al final del turno ocupado.
+            cursor = upcomingAppt.end;
+        }
+      } else {
+        // No hay choques por delante
+        slots.push(toTime(candStart));
+        cursor += duration; // Avance perfecto simbiótico del slot
+      }
     }
   }
 
@@ -181,12 +204,33 @@ router.get("/:slug/services", async (req, res) => {
   }
 });
 
+// ---------- PUBLIC: listar barberos activos por slug ----------
+router.get("/:slug/members", async (req, res) => {
+  try {
+    const slug = String(req.params.slug || "");
+    const shop = await prisma.barbershop.findFirst({ where: { slug }, select: { id: true } });
+    if (!shop) return res.status(404).json({ error: "Barbería no encontrada" });
+
+    const members = await prisma.barber.findMany({
+      where: { barbershopId: shop.id, isActive: true },
+      include: { services: { select: { id: true } } },
+      orderBy: { name: "asc" }
+    });
+
+    return res.json({ ok: true, members });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Error listando barberos" });
+  }
+});
+
 // ---------- PUBLIC: disponibilidad por fecha ----------
 router.get("/:slug/availability", async (req, res) => {
   try {
     const slug = String(req.params.slug || "");
-    const { serviceId, date, step } = req.query;
+    const { barberId, serviceId, date } = req.query;
 
+    if (!barberId) return res.status(400).json({ error: "Falta barberId" });
     if (!serviceId) return res.status(400).json({ error: "Falta serviceId" });
     if (!isValidDateISO(String(date))) return res.status(400).json({ error: "Fecha inválida (YYYY-MM-DD)" });
 
@@ -198,9 +242,9 @@ router.get("/:slug/availability", async (req, res) => {
 
     const out = await computeSlots({
       barbershopId: shop.id,
+      barberId: Number(barberId),
       serviceId: Number(serviceId),
-      date: String(date),
-      step: step ? Number(step) : 15,
+      date: String(date)
     });
 
     return res.json({ ok: true, date: String(date), service: out.service, slots: out.slots });
@@ -214,8 +258,9 @@ router.get("/:slug/availability", async (req, res) => {
 router.post("/:slug/book", async (req, res) => {
   try {
     const slug = String(req.params.slug || "");
-    const { serviceId, date, time, customerName, customerPhone, customerEmail, notes } = req.body || {};
+    const { barberId, serviceId, date, time, customerName, customerPhone, customerEmail, notes } = req.body || {};
 
+    if (!barberId) return res.status(400).json({ error: "Falta barberId" });
     if (!serviceId) return res.status(400).json({ error: "Falta serviceId" });
     if (!isValidDateISO(String(date))) return res.status(400).json({ error: "Fecha inválida (YYYY-MM-DD)" });
     if (!isValidTime(String(time))) return res.status(400).json({ error: "Hora inválida (HH:MM)" });
@@ -230,12 +275,12 @@ router.post("/:slug/book", async (req, res) => {
     });
     if (!shop) return res.status(404).json({ error: "Barbería no encontrada" });
 
-    // validar que el slot esté libre (recalcular)
+    // validar que el slot estÃ© libre (recalcular con motor adaptativo)
     const out = await computeSlots({
       barbershopId: shop.id,
+      barberId: Number(barberId),
       serviceId: Number(serviceId),
-      date: String(date),
-      step: 15,
+      date: String(date)
     });
 
     if (!out.slots.includes(String(time))) {
@@ -249,25 +294,11 @@ router.post("/:slug/book", async (req, res) => {
     const platformFee = shop.platformFee ?? 0;
     const totalToPay = depositAmount + platformFee;
 
-    // Búsqueda o creación de un barbero por defecto para la Fase 1
-    let defaultBarber = await prisma.barber.findFirst({
-      where: { barbershopId: shop.id, isActive: true },
-    });
-    if (!defaultBarber) {
-      defaultBarber = await prisma.barber.create({
-        data: {
-          barbershopId: shop.id,
-          name: "Barbero General",
-          role: "General",
-        }
-      });
-    }
-
     const created = await prisma.appointment.create({
       data: {
         barbershopId: shop.id,
         serviceId: out.service.id,
-        barberId: defaultBarber.id,
+        barberId: Number(barberId),
         date: String(date),
         time: String(time),
         customerName: String(customerName).trim(),
@@ -295,4 +326,4 @@ router.post("/:slug/book", async (req, res) => {
   }
 });
 
-module.exports = router;
+module.exports = { router, computeSlots };

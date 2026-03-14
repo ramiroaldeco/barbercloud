@@ -26,9 +26,7 @@ model Barbershop {
   appointments              Appointment[]
   users                     BarbershopUser[]
 
-  // ✅ NUEVO
-  blockedTimes              BlockedTime[]
-  workingHours              WorkingHour[]
+  // Relaciones Barberos
   barbers                   Barber[]
 }
 
@@ -99,38 +97,6 @@ model BarbershopUser {
   role         String     @default("owner")
 
   createdAt    DateTime   @default(now())
-}
-
-model WorkingHour {
-  id           Int        @id @default(autoincrement())
-  barbershopId Int
-  barbershop   Barbershop @relation(fields: [barbershopId], references: [id])
-
-  weekday      Int        // 0=Dom ... 6=Sáb
-  startTime    String     // "10:00"
-  endTime      String     // "13:30"
-
-  @@index([barbershopId, weekday])
-  @@unique([barbershopId, weekday, startTime, endTime])
-}
-
-model BlockedTime {
-  id           Int        @id @default(autoincrement())
-  barbershopId Int
-  barbershop   Barbershop @relation(fields: [barbershopId], references: [id])
-
-  // ISO "YYYY-MM-DD"
-  dateFrom     String
-  dateTo       String?    // si es null => solo ese día
-
-  // si son null => día completo bloqueado
-  startTime    String?    // "HH:MM"
-  endTime      String?    // "HH:MM"
-
-  reason       String?
-  createdAt    DateTime   @default(now())
-
-  @@index([barbershopId, dateFrom, dateTo])
 }
 
 // ════════════ MÓDULO DE MIEMBROS ════════════

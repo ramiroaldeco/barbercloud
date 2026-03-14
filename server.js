@@ -9,9 +9,7 @@ const barbershopsRoutes = require("./barbershops");
 const servicesRoutes = require("./services");
 const appointmentsRoutes = require("./appointments");
 const onboardingRoutes = require("./onboarding");
-const workingHoursRoutes = require("./workingHours");
-const publicBookingRoutes = require("./publicBooking");
-const blockedTimesRoutes = require("./blockedTimes");
+const { router: publicBookingRoutes } = require("./publicBooking");
 const clientsRoutes = require("./clients");
 const membersRoutes = require("./members");
 
@@ -77,9 +75,7 @@ app.use("/api/onboarding", onboardingRoutes);
 app.use("/api/barbershops", barbershopsRoutes);
 app.use("/api/services", servicesRoutes);
 app.use("/api/appointments", appointmentsRoutes);
-app.use("/api/working-hours", workingHoursRoutes);
 app.use("/api/public", publicBookingRoutes);
-app.use("/api/blocked-times", blockedTimesRoutes);
 app.use("/api/clients", clientsRoutes);
 app.use("/api/members", membersRoutes);
 
