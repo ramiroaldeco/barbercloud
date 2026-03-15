@@ -73,9 +73,9 @@ async function computeSlots({ barbershopId, barberId, serviceId, date }) {
   }
 
   // Buscar bloqueos explícitos (ausencias por vacaciones o cortes manuales)
-  const blocks = await prisma.blockedTime.findMany({
+  const blocks = await prisma.barberBlockedTime.findMany({
     where: {
-      barbershopId: Number(barbershopId),
+      barberId: Number(barberId),
       dateFrom: { lte: date },
       OR: [{ dateTo: null }, { dateTo: { gte: date } }],
     },
