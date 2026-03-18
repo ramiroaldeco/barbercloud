@@ -26,15 +26,23 @@ function weekdayFromISO(dateISO) {
   const dt = new Date(y, mo - 1, d);
   return dt.getDay();
 }
+function getArgTime() {
+  const d = new Date();
+  const argOffset = -3 * 60; // Argentina es UTC-3 (en minutos: -180)
+  const utc = d.getTime() + (d.getTimezoneOffset() * 60000);
+  return new Date(utc + (argOffset * 60000));
+}
+
 function todayISO() {
-  const dt = new Date();
+  const dt = getArgTime();
   const y = dt.getFullYear();
   const m = String(dt.getMonth() + 1).padStart(2, "0");
   const d = String(dt.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 }
+
 function nowMinLocal() {
-  const dt = new Date();
+  const dt = getArgTime();
   return dt.getHours() * 60 + dt.getMinutes();
 }
 function overlaps(aStart, aEnd, bStart, bEnd) {
@@ -326,4 +334,4 @@ router.post("/:slug/book", async (req, res) => {
   }
 });
 
-module.exports = { router, computeSlots };
+module.exports = { router, computeSlots, todayISO, nowMinLocal };
