@@ -12,6 +12,7 @@ const onboardingRoutes = require("./onboarding");
 const { router: publicBookingRoutes } = require("./publicBooking");
 const clientsRoutes = require("./clients");
 const membersRoutes = require("./members");
+const blockedTimesRoutes = require("./blockedTimes");
 
 const app = express();
 
@@ -78,6 +79,7 @@ app.use("/api/appointments", appointmentsRoutes);
 app.use("/api/public", publicBookingRoutes);
 app.use("/api/clients", clientsRoutes);
 app.use("/api/members", membersRoutes);
+app.use("/api/blocked-times", blockedTimesRoutes);
 
 /**
  * =========================

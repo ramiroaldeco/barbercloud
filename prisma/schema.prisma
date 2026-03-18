@@ -54,7 +54,7 @@ model Appointment {
   id            Int      @id @default(autoincrement())
   barbershopId  Int
   serviceId     Int
-  barberId      Int
+  barberId      Int?
 
   customerName  String
   customerPhone String
@@ -80,7 +80,7 @@ model Appointment {
 
   barbershop    Barbershop @relation(fields: [barbershopId], references: [id])
   service       Service    @relation(fields: [serviceId], references: [id])
-  barber        Barber     @relation(fields: [barberId], references: [id])
+  barber        Barber?    @relation(fields: [barberId], references: [id])
 
   // ✅ Evita doble reserva exacta en el mismo barbero e igual hora (aunque la lógica fuerte va por Node.js)
   @@unique([barberId, date, time])

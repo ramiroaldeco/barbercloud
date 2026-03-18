@@ -1,4 +1,5 @@
-// blockedTimes.js
+// blockedTimes.js — Barber-Centric (Fase 1 Estabilización)
+// Gestiona bloqueos de tiempo por barbero (vacaciones, ausencias, etc.)
 const express = require("express");
 const prisma = require("./prisma");
 const auth = require("./authMiddleware");
@@ -24,14 +25,27 @@ function toMin(t) {
   return h * 60 + m;
 }
 
-// GET /api/blocked-times/mine
-router.get("/mine", auth, async (req, res) => {
+// GET /api/blocked-times/:barberId
+// Lista bloqueos de un barbero específico
+router.get("/:barberId", auth, async (req, res) => {
   try {
     if (!requireOwner(req, res)) return;
 
-    const items = await prisma.blockedTime.findMany({
-      where: { barbershopId: req.user.barbershopId },
-      orderBy: [{ dateFrom: "asc" }, { startTime: "asc" }, { createdAt: "asc" }],
+    const barberId = Number(req.params.barberId);
+    if (!barberId || Number.isNaN(barberId)) {
+      return res.status(400).json({ error: "barberId inválido" });
+    }
+
+    // Verificar que el barbero pertenece a mi barbería
+    const barber = await prisma.barber.findFirst({
+      where: { id: barberId, barbershopId: req.user.barbershopId },
+      select: { id: true },
+    });
+    if (!barber) return res.status(404).json({ error: "Barbero no encontrado" });
+
+    const items = await prisma.barberBlockedTime.findMany({
+      where: { barberId },
+      orderBy: [{ dateFrom: "asc" }],
     });
 
     return res.json({ ok: true, items });
@@ -41,10 +55,23 @@ router.get("/mine", auth, async (req, res) => {
   }
 });
 
-// POST /api/blocked-times/mine
-router.post("/mine", auth, async (req, res) => {
+// POST /api/blocked-times/:barberId
+// Crear bloqueo para un barbero
+router.post("/:barberId", auth, async (req, res) => {
   try {
     if (!requireOwner(req, res)) return;
+
+    const barberId = Number(req.params.barberId);
+    if (!barberId || Number.isNaN(barberId)) {
+      return res.status(400).json({ error: "barberId inválido" });
+    }
+
+    // Verificar que el barbero pertenece a mi barbería
+    const barber = await prisma.barber.findFirst({
+      where: { id: barberId, barbershopId: req.user.barbershopId },
+      select: { id: true },
+    });
+    if (!barber) return res.status(404).json({ error: "Barbero no encontrado" });
 
     const { dateFrom, dateTo, startTime, endTime, reason } = req.body || {};
 
@@ -62,29 +89,29 @@ router.post("/mine", auth, async (req, res) => {
     }
 
     const s = startTime ? String(startTime) : null;
-    const e = endTime ? String(endTime) : null;
+    const e2 = endTime ? String(endTime) : null;
 
-    // si mandan uno de los dos, tienen que mandar ambos
-    if ((s && !e) || (!s && e)) {
+    // Si mandan uno de los dos, tienen que mandar ambos
+    if ((s && !e2) || (!s && e2)) {
       return res.status(400).json({ error: "Si bloqueás franja, mandá startTime y endTime" });
     }
 
-    if (s && e) {
-      if (!isValidTime(s) || !isValidTime(e)) {
+    if (s && e2) {
+      if (!isValidTime(s) || !isValidTime(e2)) {
         return res.status(400).json({ error: "Hora inválida (HH:MM)" });
       }
-      if (toMin(e) <= toMin(s)) {
+      if (toMin(e2) <= toMin(s)) {
         return res.status(400).json({ error: "endTime debe ser mayor que startTime" });
       }
     }
 
-    const created = await prisma.blockedTime.create({
+    const created = await prisma.barberBlockedTime.create({
       data: {
-        barbershopId: req.user.barbershopId,
+        barberId,
         dateFrom: dFrom,
         dateTo: dTo,
         startTime: s,
-        endTime: e,
+        endTime: e2,
         reason: reason ? String(reason).trim() : null,
       },
     });
@@ -96,22 +123,30 @@ router.post("/mine", auth, async (req, res) => {
   }
 });
 
-// DELETE /api/blocked-times/mine/:id
-router.delete("/mine/:id", auth, async (req, res) => {
+// DELETE /api/blocked-times/:barberId/:id
+// Borrar un bloqueo específico de un barbero
+router.delete("/:barberId/:id", auth, async (req, res) => {
   try {
     if (!requireOwner(req, res)) return;
 
+    const barberId = Number(req.params.barberId);
     const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ error: "ID inválido" });
+    if (!barberId || !id) return res.status(400).json({ error: "IDs inválidos" });
 
-    // seguridad: solo borrar si es de mi barbería
-    const found = await prisma.blockedTime.findFirst({
-      where: { id, barbershopId: req.user.barbershopId },
+    // Verificar que el barbero pertenece a mi barbería
+    const barber = await prisma.barber.findFirst({
+      where: { id: barberId, barbershopId: req.user.barbershopId },
+      select: { id: true },
+    });
+    if (!barber) return res.status(404).json({ error: "Barbero no encontrado" });
+
+    const found = await prisma.barberBlockedTime.findFirst({
+      where: { id, barberId },
       select: { id: true },
     });
     if (!found) return res.status(404).json({ error: "Bloqueo no encontrado" });
 
-    await prisma.blockedTime.delete({ where: { id } });
+    await prisma.barberBlockedTime.delete({ where: { id } });
     return res.json({ ok: true });
   } catch (e) {
     console.error(e);
