@@ -49,7 +49,8 @@ router.get("/", auth, async (req, res) => {
       where,
       orderBy: [{ date: "asc" }, { time: "asc" }],
       include: {
-        service: { select: { id: true, name: true } },
+        service: { select: { id: true, name: true, durationMinutes: true } },
+        barber: { select: { id: true, name: true } },
       },
     });
 
