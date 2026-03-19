@@ -27,18 +27,29 @@ function weekdayFromISO(dateISO) {
   return dt.getDay();
 }
 function getArgTime() {
+  // Obtenemos la fecha/hora actual en Argentina usando Intl para no fallar por 
+  // la ubicación del servidor de Render (que suele estar en UTC).
   const d = new Date();
-  const argOffset = -3 * 60; // Argentina es UTC-3 (en minutos: -180)
-  const utc = d.getTime() + (d.getTimezoneOffset() * 60000);
-  return new Date(utc + (argOffset * 60000));
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    year: "numeric", month: "numeric", day: "numeric",
+    hour: "numeric", minute: "numeric", second: "numeric",
+    hour12: false
+  });
+  const parts = formatter.formatToParts(d);
+  const map = {};
+  parts.forEach(p => map[p.type] = p.value);
+  
+  // Construimos un objeto Date que represente el "ahora" en Argentina 
+  // (aunque el sistema crea que es local, los valores numéricos serán los de ARG)
+  return new Date(map.year, map.month - 1, map.day, map.hour, map.minute, map.second);
 }
 
 function todayISO() {
-  const dt = getArgTime();
-  const y = dt.getFullYear();
-  const m = String(dt.getMonth() + 1).padStart(2, "0");
-  const d = String(dt.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    year: "numeric", month: "2-digit", day: "2-digit"
+  }).format(new Date());
 }
 
 function nowMinLocal() {
