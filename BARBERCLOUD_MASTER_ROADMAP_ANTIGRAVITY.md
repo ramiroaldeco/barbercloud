@@ -401,6 +401,7 @@ O, si la lógica pide otra variante, siempre respetando:
 - [x] el cliente ve una página linda y clara
 - [x] el cliente solo ve opciones válidas
 - [x] la UX no parece improvisada
+- [x] **Canal Público (Widget Admin):** Link dinámico y QR en configuración [NEW]
 
 ---
 
