@@ -146,6 +146,12 @@ async function computeSlots({ barbershopId, barberId, serviceId, date }) {
     // Si es hoy, el cursor no puede iniciar en el pasado
     if (isToday && cursor < minNow) {
       cursor = minNow; 
+
+      // PARCHE FASE 3: Solo redondeamos el inicio para no arrastrar "minutos raros" del reloj
+      const remainder = cursor % 10;
+      if (remainder !== 0) {
+        cursor += (10 - remainder);
+      }
     }
 
     // Iterar la franja laboral hasta que ya no quede espacio para un turno completo
