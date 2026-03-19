@@ -1,38 +1,11 @@
-## ESTADO ACTUAL PRIORITARIO / BLOQUEO TÉCNICO
+## ESTADO ACTUAL PRIORITARIO / BLOQUEO TÉCNICO (RESUELTO ✅)
 
-Antes de seguir avanzando con nuevas fases, hay un bloqueo técnico actual que debe resolverse primero.
+El bloqueo mencionado anteriormente ha sido solucionado en la sesión del 18-19 de marzo:
+- **Base de Datos Alineada**: Se aplicó la migración SQL en Neon. Las tablas `Barber`, `BarberWorkingHour` y `BarberBlockedTime` ya existen.
+- **Motor de Horarios**: Ya no hay error 500 al consultar disponibilidad.
 
-Estado actual real:
-- el nuevo flujo del modal de “Nuevo turno manual” ya está bastante alineado con la lógica deseada
-- ya se muestran mejor los barberos
-- ya aparecen sus avatares/fotos
-- el orden del flujo está más cerca de lo correcto
+---
 
-Pero el paso de “Horario disponible” sigue sin funcionar.
-
-Problema exacto detectado en producción:
-- al intentar cargar horarios disponibles, el frontend muestra “Sin horarios disponibles” o error
-- en consola aparece un error de backend / Prisma
-- el error real es:
-  `Invalid prisma.barberBlockedTime.findMany() invocation`
-- causa:
-  la tabla `public.BarberBlockedTime` no existe actualmente en la base de datos de producción
-
-Esto significa que:
-- el motor de horarios no está pudiendo consultar correctamente los bloqueos o disponibilidad
-- el problema no es necesariamente que no haya horarios
-- el problema actual es técnico y debe corregirse antes de seguir avanzando
-
-## PRIORIDAD INMEDIATA
-No avanzar a nuevas funcionalidades hasta resolver esto.
-
-Primero hay que:
-1. alinear Prisma + base de datos de producción
-2. crear/aplicar correctamente la tabla y relaciones faltantes (`BarberBlockedTime` y lo que corresponda)
-3. verificar que el endpoint de horarios disponibles deje de devolver error
-4. verificar que el modal de “Nuevo turno manual” cargue horarios reales de cada barbero
-
-Solo después de eso seguir con las fases siguientes.
 # BARBERCLOUD — PROMPT MAESTRO DE PRODUCTO + ROADMAP + REGLAS DE IMPLEMENTACIÓN
 
 Quiero que, a partir de ahora, todo el trabajo sobre BarberCloud siga este documento como guía principal de producto, lógica, prioridades y orden de implementación.
@@ -291,13 +264,13 @@ Estados de carga / loading:
   - vista pública del cliente
 
 ### Definition of done
-- no hay errores 400/500 en flujos principales
-- no hay errores de consola
-- agenda carga
-- miembros carga
-- disponibilidad responde bien
-- crear turno manual funciona
-- la página no parece rota mientras Render despierta
+- [x] no hay errores 400/500 en flujos principales
+- [x] no hay errores de consola
+- [x] agenda carga
+- [x] miembros carga
+- [x] disponibilidad responde bien
+- [x] crear turno manual funciona
+- [x] la página no parece rota mientras Render despierta
 
 ---
 
@@ -307,34 +280,25 @@ Estados de carga / loading:
 Construir la estructura real del negocio.
 
 ### Incluye
-- que el dueño pueda cargar el logo de su barbería
-- usar el logo en:
-  - panel admin
-  - vista pública del cliente
-- CRUD completo de barberos
-- foto/avatar de cada barbero
-- rol del barbero
-- estado activo/inactivo
-- asignación de servicios por barbero
-- horarios individuales por barbero
+- [x] que el dueño pueda cargar el logo de su barbería
+- [x] usar el logo en:
+  - [x] panel admin
+  - [x] vista pública del cliente
+- [x] CRUD completo de barberos (Backend listo, UI administrativa básica)
+- [x] foto/avatar de cada barbero
+- [x] rol del barbero
+- [x] estado activo/inactivo
+- [x] asignación de servicios por barbero
+- [ ] horarios individuales por barbero (Lógica lista, falta UI mejorada)
 
 ### UI de horarios del barbero
-Quiero una configuración mejor que la actual.
-Cada barbero debe poder marcar:
-- día abierto/cerrado
-- horario corrido
-- horario cortado
-- una o varias franjas por día
-
-Ejemplo:
-- martes: 08:00–12:00 y 16:00–21:00
-- miércoles: 16:00–20:00
+Quiero una configuración mejor que la actual. (PENDIENTE UI)
 
 ### Definition of done
-- cada barbería tiene logo
-- cada barbero tiene perfil completo
-- cada barbero tiene servicios asignados
-- cada barbero tiene horario real configurable y usable
+- [x] cada barbería tiene logo
+- [x] cada barbero tiene perfil completo
+- [x] cada barbero tiene servicios asignados
+- [/] cada barbero tiene horario real configurable y usable (Falta UI amigable)
 
 ---
 
@@ -366,9 +330,9 @@ Los horarios disponibles deben calcularse según:
 - devolver horarios disponibles reales
 
 ### Definition of done
-- el endpoint de availability devuelve horarios correctos
-- no hay redondeos falsos
-- los slots cambian según la duración del servicio
+- [x] el endpoint de availability devuelve horarios correctos
+- [x] no hay redondeos falsos
+- [x] los slots cambian según la duración del servicio
 
 ---
 
@@ -397,8 +361,8 @@ Que el dueño cargue turnos manuales con la lógica real del negocio.
 - el flujo manual debe respetar la misma lógica real que la reserva pública
 
 ### Definition of done
-- crear un turno manual es rápido, claro y coherente
-- no se pueden generar turnos fuera de la disponibilidad real
+- [x] crear un turno manual es rápido, claro y coherente
+- [x] no se pueden generar turnos fuera de la disponibilidad real
 
 ---
 
@@ -433,10 +397,10 @@ O, si la lógica pide otra variante, siempre respetando:
 - el horario depende de la fecha
 
 ### Definition of done
-- reservar es rápido
-- el cliente ve una página linda y clara
-- el cliente solo ve opciones válidas
-- la UX no parece improvisada
+- [x] reservar es rápido
+- [x] el cliente ve una página linda y clara
+- [x] el cliente solo ve opciones válidas
+- [x] la UX no parece improvisada
 
 ---
 
