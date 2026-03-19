@@ -193,7 +193,7 @@ router.get("/:slug/barbershop", async (req, res) => {
     const slug = String(req.params.slug || "");
     const shop = await prisma.barbershop.findFirst({
       where: { slug },
-      select: { id: true, name: true, city: true, address: true, phone: true, slug: true, defaultDepositPercentage: true, platformFee: true },
+      select: { id: true, name: true, city: true, address: true, phone: true, slug: true, defaultDepositPercentage: true, platformFee: true, logoBase64: true },
     });
     if (!shop) return res.status(404).json({ error: "Barbería no encontrada" });
     return res.json({ ok: true, item: shop });

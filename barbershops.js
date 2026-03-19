@@ -127,6 +127,7 @@ router.get("/mine", auth, async (req, res) => {
         slug: true,
         defaultDepositPercentage: true,
         platformFee: true, // existe pero el admin v2 NO la muestra
+        logoBase64: true,
       },
     });
     if (!shop) return res.status(404).json({ error: "No encontrada" });
@@ -142,7 +143,7 @@ router.put("/mine", auth, async (req, res) => {
   try {
     if (!requireOwner(req, res)) return;
 
-    const { name, city, address, phone, slug } = req.body;
+    const { name, city, address, phone, slug, logoBase64 } = req.body;
 
     let newSlug = undefined;
     if (slug !== undefined) {
@@ -165,6 +166,7 @@ router.put("/mine", auth, async (req, res) => {
         ...(address !== undefined ? { address: address == null ? null : String(address) } : {}),
         ...(phone !== undefined ? { phone: phone == null ? null : String(phone) } : {}),
         ...(slug !== undefined ? { slug: newSlug } : {}),
+        ...(logoBase64 !== undefined ? { logoBase64: logoBase64 == null ? null : String(logoBase64) } : {}),
         // ⛔ platformFee NO se toca acá
       },
       select: {
@@ -175,6 +177,7 @@ router.put("/mine", auth, async (req, res) => {
         phone: true,
         slug: true,
         defaultDepositPercentage: true,
+        logoBase64: true,
       },
     });
 

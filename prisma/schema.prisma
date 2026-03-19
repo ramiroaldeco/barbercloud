@@ -22,6 +22,9 @@ model Barbershop {
   defaultDepositPercentage  Int              @default(15)  // recomendado 15%
   platformFee               Int              @default(200) // tu comisión por turno (pesos)
 
+  // Identidad
+  logoBase64                String?          @db.Text
+
   services                  Service[]
   appointments              Appointment[]
   users                     BarbershopUser[]
