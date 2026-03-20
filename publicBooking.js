@@ -118,11 +118,22 @@ async function computeSlots({ barbershopId, barberId, serviceId, date }) {
     },
     select: {
       time: true,
+      status: true,
+      lockExpiresAt: true,
       service: { select: { durationMinutes: true } },
     },
   });
 
+  const nowLocal = new Date();
+
   const occupied = appts
+    .filter(a => {
+      // Si el turno está en pago, pero el lock expiró, lo ignoramos (vuelve a estar libre)
+      if (a.status === "payment_pending") {
+         return a.lockExpiresAt && new Date(a.lockExpiresAt) > nowLocal;
+      }
+      return true;
+    })
     .filter(a => isValidTime(a.time))
     .map(a => {
       const s = toMin(a.time);
@@ -300,7 +311,13 @@ router.post("/:slug/book", async (req, res) => {
     });
     if (!shop) return res.status(404).json({ error: "Barbería no encontrada" });
 
-    // validar que el slot estÃ© libre (recalcular con motor adaptativo)
+    const barber = await prisma.barber.findFirst({
+      where: { id: Number(barberId) },
+      select: { id: true, mpAccessToken: true, mpStatus: true, name: true }
+    });
+    if (!barber) return res.status(404).json({ error: "Barbero no encontrado" });
+
+    // validar que el slot esté libre (recalcular con motor adaptativo y respetando locks)
     const out = await computeSlots({
       barbershopId: shop.id,
       barberId: Number(barberId),
@@ -309,29 +326,71 @@ router.post("/:slug/book", async (req, res) => {
     });
 
     if (!out.slots.includes(String(time))) {
-      return res.status(409).json({ error: "Ese horario ya no está disponible" });
+      return res.status(409).json({ error: "Ese horario ya no está disponible (alguien lo puede estar pagando ahora mismo)" });
     }
 
-    // totalToPay / deposit: snapshot al momento de reservar
+    // Cálculos económicos
     const depositPct = out.service.depositPercentage ?? shop.defaultDepositPercentage ?? 15;
     const servicePrice = out.service.price || 0;
     const depositAmount = Math.round((servicePrice * depositPct) / 100);
     const platformFee = shop.platformFee ?? 0;
     const totalToPay = depositAmount + platformFee;
 
+    // Generar Referencia Única para MVP
+    const externalReference = `BC_${shop.id}_${barber.id}_${Date.now()}`;
+    // Lock temporal de 10 min
+    const lockExpiresAt = new Date();
+    lockExpiresAt.setMinutes(lockExpiresAt.getMinutes() + 10);
+
+    // Evaluamos Camino A (Conectado) vs Camino B (Desconectado)
+    const canChargeDeposit = (barber.mpStatus === "CONNECTED" && barber.mpAccessToken);
+    const MP_ACCESS_TOKEN_OWNER = process.env.MP_ACCESS_TOKEN || ""; // El token de la plataforma SaaS (TÚ)
+    
+    // Si podemos cobrar seña, usamos el Token del Barbero. Si no, o cobramos solo Fee o lo dejamos pendiente.
+    // Para simplificar: Si Camino B -> el turno nace directo PENDIENTE (Sujeto a Confirmación en el local).
+    // OJO: El request pedía "cobrar solo el fee de la SaaS".
+    // Para cobrar CUALQUIER COSA, usamos MP_ACCESS_TOKEN_OWNER. Si es Camino A, usamos split.
+    
+    let isSplitPayment = false;
+    let finalAmountToCharge = 0;
+    let finalTokenToUse = "";
+    let finalStatus = "pending";
+    let finalPaymentStatus = "unpaid";
+    let preferenceId = null;
+    let initPoint = null;
+
+    if (canChargeDeposit) {
+       // CAMINO A: Cobra Seña + Fee. Paga Barbero, Fee se dirige a vos vía marketplace_fee.
+       isSplitPayment = true;
+       finalAmountToCharge = totalToPay;
+       finalTokenToUse = barber.mpAccessToken; // Se crea en nombre del barbero
+       finalStatus = "payment_pending"; // Requiere pago para confirmarse
+       finalPaymentStatus = "unpaid";
+    } else {
+       // CAMINO B: El backend pedía cobrar solo Fee. Si el dueño no tiene,
+       // por ahora dejaremos el turno "PENDIENTE" al instante sin checkout para fluidez.
+       // (Podríamos en el futuro abrir caja tuya directa, pero es mejor avisar que es en local)
+       finalStatus = "pending";
+       finalPaymentStatus = "unpaid";
+       finalAmountToCharge = 0; // Sin cobro online
+    }
+
     const created = await prisma.appointment.create({
       data: {
         barbershopId: shop.id,
         serviceId: out.service.id,
-        barberId: Number(barberId),
+        barberId: barber.id,
         date: String(date),
         time: String(time),
         customerName: String(customerName).trim(),
         customerPhone: String(customerPhone).trim(),
         customerEmail: customerEmail ? String(customerEmail).trim() : null,
         notes: notes ? String(notes).trim() : null,
-        status: "pending",
-        paymentStatus: "unpaid",
+        status: finalStatus,
+        paymentStatus: finalPaymentStatus,
+        paymentProvider: "mercadopago",
+        externalReference: externalReference,
+        lockExpiresAt: finalStatus === "payment_pending" ? lockExpiresAt : null,
         depositPercentageAtBooking: depositPct,
         servicePrice,
         depositAmount,
@@ -340,7 +399,82 @@ router.post("/:slug/book", async (req, res) => {
       select: { id: true },
     });
 
-    return res.json({ ok: true, id: created.id });
+    if (isSplitPayment && finalTokenToUse) {
+       // Llamada a MP para crear preferencia
+       try {
+         const mpBody = {
+           items: [
+             {
+               title: `Reserva - ${out.service.name} con ${barber.name}`,
+               quantity: 1,
+               currency_id: "ARS",
+               unit_price: finalAmountToCharge
+             }
+           ],
+           payer: {
+             name: customerName,
+             email: customerEmail || "cliente@barbercloud.com"
+           },
+           back_urls: {
+             success: `${process.env.PUBLIC_URL || 'http://localhost:5500/barbercloudFRONTEND'}/book.html?slug=${slug}&status=success`,
+             failure: `${process.env.PUBLIC_URL || 'http://localhost:5500/barbercloudFRONTEND'}/book.html?slug=${slug}&status=failure`,
+             pending: `${process.env.PUBLIC_URL || 'http://localhost:5500/barbercloudFRONTEND'}/book.html?slug=${slug}&status=pending`
+           },
+           auto_return: "approved",
+           external_reference: externalReference,
+           notification_url: `${process.env.PUBLIC_API_URL || 'https://tu-dominio.com'}/api/payments/webhook?barberId=${barber.id}`,
+           marketplace_fee: platformFee // ✅ ESTA ES LA MAGIA: El fee va a tu cuenta SaaS
+         };
+
+         const mpRes = await fetch("https://api.mercadopago.com/checkout/preferences", {
+           method: "POST",
+           headers: {
+             "Authorization": `Bearer ${finalTokenToUse}`,
+             "Content-Type": "application/json"
+           },
+           body: JSON.stringify(mpBody)
+         });
+
+         const prefData = await mpRes.json();
+         
+         if (mpRes.ok && prefData.id) {
+            preferenceId = prefData.id;
+            initPoint = prefData.init_point;
+            
+            // Guardamos el paymentId/PrefId en la DB
+            await prisma.appointment.update({
+              where: { id: created.id },
+              data: { paymentId: preferenceId }
+            });
+         } else {
+            console.error("MP Preference Error:", prefData);
+            // Fallback si MP falla
+            await prisma.appointment.update({
+               where: { id: created.id },
+               data: { status: "pending", lockExpiresAt: null }
+            });
+            finalStatus = "pending";
+         }
+       } catch (err) {
+         console.error("Fetch MP Error:", err);
+         await prisma.appointment.update({
+            where: { id: created.id },
+            data: { status: "pending", lockExpiresAt: null }
+         });
+         finalStatus = "pending";
+       }
+    }
+
+    return res.json({ 
+      ok: true, 
+      id: created.id, 
+      status: finalStatus,
+      preferenceId: preferenceId,
+      initPoint: initPoint,
+      externalReference: externalReference,
+      mpPublicKey: process.env.MP_PUBLIC_KEY || "APP_USR-8baed143-a602-4fd6-912f-614742be1508" // Token dummy publico de prueba si no hay env
+    });
+
   } catch (e) {
     // si justo colisionó el unique barbershopId+date+time
     if (e.code === "P2002") {

@@ -13,6 +13,7 @@ const { router: publicBookingRoutes } = require("./publicBooking");
 const clientsRoutes = require("./clients");
 const membersRoutes = require("./members");
 const blockedTimesRoutes = require("./blockedTimes");
+const { router: paymentsRoutes } = require("./payments");
 
 const app = express();
 
@@ -80,6 +81,7 @@ app.use("/api/public", publicBookingRoutes);
 app.use("/api/clients", clientsRoutes);
 app.use("/api/members", membersRoutes);
 app.use("/api/blocked-times", blockedTimesRoutes);
+app.use("/api/payments", paymentsRoutes);
 
 /**
  * =========================

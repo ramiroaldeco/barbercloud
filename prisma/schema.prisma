@@ -66,6 +66,12 @@ model Appointment {
   customerEmail String?
   notes         String?
 
+  // ✅ FASE 6: Pagos y Locks
+  paymentProvider     String?  @default("mercadopago")
+  paymentId           String?
+  externalReference   String?  @unique
+  lockExpiresAt       DateTime?
+
   date          String
   time          String
 
@@ -113,6 +119,14 @@ model Barber {
   avatarBase64 String?    @db.Text
   role         String     @default("Barbero")
   isActive     Boolean    @default(true)
+  
+  // ✅ FASE 6: Pago Individual MP
+  mpAccessToken    String?
+  mpUserId         String?
+  mpRefreshToken   String?
+  mpTokenExpiresAt DateTime?
+  mpStatus         String   @default("NOT_CONNECTED") // CONNECTED, ERROR
+  
   
   // Relaciones
   services     Service[]
