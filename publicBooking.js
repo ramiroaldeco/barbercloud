@@ -402,29 +402,33 @@ router.post("/:slug/book", async (req, res) => {
     if (isSplitPayment && finalTokenToUse) {
        // Llamada a MP para crear preferencia
        try {
-         const mpBody = {
-           items: [
-             {
-               title: `Reserva - ${out.service.name} con ${barber.name}`,
-               quantity: 1,
-               currency_id: "ARS",
-               unit_price: finalAmountToCharge
-             }
-           ],
-           payer: {
-             name: customerName,
-             email: customerEmail || "cliente@barbercloud.com"
-           },
-           back_urls: {
-             success: `${process.env.PUBLIC_URL || 'http://localhost:5500/barbercloudFRONTEND'}/book.html?slug=${slug}&status=success`,
-             failure: `${process.env.PUBLIC_URL || 'http://localhost:5500/barbercloudFRONTEND'}/book.html?slug=${slug}&status=failure`,
-             pending: `${process.env.PUBLIC_URL || 'http://localhost:5500/barbercloudFRONTEND'}/book.html?slug=${slug}&status=pending`
-           },
-           auto_return: "approved",
-           external_reference: externalReference,
-           notification_url: `${process.env.PUBLIC_API_URL || 'https://tu-dominio.com'}/api/payments/webhook?barberId=${barber.id}`,
-           marketplace_fee: platformFee // ✅ ESTA ES LA MAGIA: El fee va a tu cuenta SaaS
-         };
+           // 1) Determinar URLs reales (Fallback seguro a Producción real)
+           const frontendBase = process.env.FRONTEND_URL || 'https://barberscloud.vercel.app';
+           const backendBase = process.env.BACKEND_URL || 'https://barbercloud.onrender.com';
+
+           const mpBody = {
+             items: [
+               {
+                 title: `Reserva - ${out.service.name} con ${barber.name}`,
+                 quantity: 1,
+                 currency_id: "ARS",
+                 unit_price: finalAmountToCharge
+               }
+             ],
+             payer: {
+               name: customerName,
+               email: customerEmail || "cliente@barbercloud.com"
+             },
+             back_urls: {
+               success: `${frontendBase}/book.html?slug=${slug}&status=success`,
+               failure: `${frontendBase}/book.html?slug=${slug}&status=failure`,
+               pending: `${frontendBase}/book.html?slug=${slug}&status=pending`
+             },
+             auto_return: "approved",
+             external_reference: externalReference,
+             notification_url: `${backendBase}/api/payments/webhook?barberId=${barber.id}`,
+             marketplace_fee: platformFee 
+           };
 
          const mpRes = await fetch("https://api.mercadopago.com/checkout/preferences", {
            method: "POST",
