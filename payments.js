@@ -7,10 +7,13 @@ const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || "supersecret_bc_2024";
 
 // Credenciales SaaS de Mercado Pago (Marketplace Owner)
-const MP_CLIENT_ID = process.env.MP_CLIENT_ID || "TU_CLIENT_ID_ACA";
-const MP_CLIENT_SECRET = process.env.MP_CLIENT_SECRET || "TU_CLIENT_SECRET_ACA";
+const MP_CLIENT_ID = process.env.MP_CLIENT_ID;
+const MP_CLIENT_SECRET = process.env.MP_CLIENT_SECRET;
 // URL de redirección (El SaaS recibe al barbero de vuelta)
-const MP_REDIRECT_URI = process.env.MP_REDIRECT_URI || "http://localhost:3000/api/payments/oauth/callback";
+const MP_REDIRECT_URI = process.env.MP_REDIRECT_URI || "https://barbercloud.onrender.com/api/payments/oauth/callback";
+const FRONTEND_ADMIN_URL = process.env.FRONTEND_URL 
+  ? `${process.env.FRONTEND_URL}/admin_v2.html#/miembros` 
+  : "https://barberscloud.vercel.app/admin_v2.html#/miembros";
 
 // Middleware para decodificar al admin/owner logueado (necesario para la auth)
 async function requireAuth(req, res, next) {
@@ -32,6 +35,10 @@ async function requireAuth(req, res, next) {
 router.get("/oauth/authorize", (req, res) => {
   const { barberId } = req.query;
   if (!barberId) return res.status(400).send("Falta barberId");
+  
+  if (!MP_CLIENT_ID) {
+    return res.status(500).send("El dueño del SaaS aún no ha configurado MP_CLIENT_ID en Render.");
+  }
 
   // El state enviará el ID del barbero para que sepamos a quién asignarle el token al volver.
   const state = String(barberId);
@@ -49,9 +56,8 @@ router.get("/oauth/authorize", (req, res) => {
 router.get("/oauth/callback", async (req, res) => {
   const { code, state, error } = req.query;
 
-  // URL del frontend a donde mandarlo tras terminar (usamos un HTML intermedio o redirección limpia)
-  // Como no estamos seguros del puerto del Live Server del cliente, tratamos de volver a la vista admin
-  const fallbackFrontendUrl = "http://localhost:5500/barbercloudFRONTEND/admin_v2.html#/miembros";
+  // URL del frontend a donde mandarlo tras terminar
+  const fallbackFrontendUrl = FRONTEND_ADMIN_URL;
 
   if (error || !code) {
     console.error("MP OAuth Error:", error);
