@@ -100,36 +100,36 @@ router.post("/signup", async (req, res) => {
       });
 
       // Servicios demo básicos para que no quede vacío
-      await tx.service.createMany({
-        data: [
-          {
-            barbershopId: barbershop.id,
-            name: "Corte",
-            price: 4000,
-            durationMinutes: 30,
-            depositPercentage: null, // usa el default del local
-          },
-          {
-            barbershopId: barbershop.id,
-            name: "Corte + Barba",
-            price: 5500,
-            durationMinutes: 45,
-            depositPercentage: null,
-          },
-        ],
+      const s1 = await tx.service.create({
+        data: { barbershopId: barbershop.id, name: "Corte", price: 4000, durationMinutes: 30 }
+      });
+      const s2 = await tx.service.create({
+        data: { barbershopId: barbershop.id, name: "Corte + Barba", price: 5500, durationMinutes: 45 }
       });
 
-      // ✅ Horarios por defecto (Lun-Sáb 10:00–20:00) para que el booking funcione desde el primer día
-      const defaultHours = [];
-      for (let wd = 1; wd <= 6; wd++) { // 1=Lun ... 6=Sáb (Domingo cerrado)
-        defaultHours.push({
+      // Crear un primer barbero con el nombre del dueño
+      const firstBarber = await tx.barber.create({
+        data: {
           barbershopId: barbershop.id,
+          name: ownerName,
+          isActive: true,
+          role: "Owner / Barbero",
+          // Lo conectamos a los 2 servicios creados recientemente
+          services: { connect: [{ id: s1.id }, { id: s2.id }] }
+        }
+      });
+
+      // Horarios por defecto (Lun-Sáb 10:00–20:00) para el primer barbero
+      const defaultHours = [];
+      for (let wd = 1; wd <= 6; wd++) { // 1=Lun ... 6=Sáb
+        defaultHours.push({
+          barberId: firstBarber.id,
           weekday: wd,
           startTime: "10:00",
           endTime: "20:00",
         });
       }
-      await tx.workingHour.createMany({ data: defaultHours });
+      await tx.barberWorkingHour.createMany({ data: defaultHours });
 
       return { barbershop, user };
     });
