@@ -448,21 +448,21 @@ router.post("/:slug/book", async (req, res) => {
             });
          } else {
             console.error("MP Preference Error:", prefData);
-            // Fallback si MP falla
-            await prisma.appointment.update({
-               where: { id: created.id },
-               data: { status: "pending", lockExpiresAt: null }
+            // ❌ FASE 6 (DEBUG MOOD): Removemos el fallback temporalmente para ver POR QUÉ MP RECHAZA LA PREFERENCIA
+            await prisma.appointment.delete({ where: { id: created.id } });
+            return res.status(400).json({ 
+              error: "Mercado Pago rechazó la preferencia de cobro. Razón: " + JSON.stringify(prefData)
             });
-            finalStatus = "pending";
          }
        } catch (err) {
          console.error("Fetch MP Error:", err);
-         await prisma.appointment.update({
-            where: { id: created.id },
-            data: { status: "pending", lockExpiresAt: null }
-         });
-         finalStatus = "pending";
+         await prisma.appointment.delete({ where: { id: created.id } });
+         return res.status(500).json({ error: "No se pudo conectar con Mercado Pago: " + err.message });
        }
+    } else if (finalDepositAmount > 0) {
+       // Si tenía que cobrar pero barber.mpStatus no es CONNECTED o el token es falso
+       await prisma.appointment.delete({ where: { id: created.id } });
+       return res.status(400).json({ error: "El barbero no terminó de vincular Mercado Pago correctamente. mpStatus != CONNECTED" });
     }
 
     return res.json({ 
