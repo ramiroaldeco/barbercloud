@@ -14,6 +14,7 @@ const clientsRoutes = require("./clients");
 const membersRoutes = require("./members");
 const blockedTimesRoutes = require("./blockedTimes");
 const { router: paymentsRoutes } = require("./payments");
+const statisticsRoutes = require("./statistics");
 
 const app = express();
 
@@ -82,6 +83,7 @@ app.use("/api/clients", clientsRoutes);
 app.use("/api/members", membersRoutes);
 app.use("/api/blocked-times", blockedTimesRoutes);
 app.use("/api/payments", paymentsRoutes);
+app.use("/api/statistics", statisticsRoutes);
 
 /**
  * =========================
