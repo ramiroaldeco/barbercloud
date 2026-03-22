@@ -152,8 +152,8 @@ router.post("/owner", auth, async (req, res) => {
     const depositAmount = Math.round((price * Number(depositPct || 0)) / 100);
     const totalToPay = depositAmount + fee;
 
-    const allowedStatus = new Set(["pending", "confirmed", "canceled"]);
-    const finalStatus = allowedStatus.has(String(status)) ? String(status) : "pending";
+    const allowedStatus = new Set(["PENDING_PAYMENT", "CONFIRMED", "CANCELLED_EXPIRED", "CANCELLED_MANUAL", "pending", "confirmed", "canceled"]);
+    const finalStatus = allowedStatus.has(String(status)) ? String(status) : "CONFIRMED";
 
     const created = await prisma.appointment.create({
       data: {
@@ -253,7 +253,7 @@ router.post("/", async (req, res) => {
         customerPhone: String(customerPhone),
         customerEmail: customerEmail ? String(customerEmail) : null,
         notes: notes ? String(notes) : null,
-        status: "pending",
+        status: "CONFIRMED",
         paymentStatus: "unpaid",
         depositPercentageAtBooking: Number(depositPct || 0),
         servicePrice: price,
@@ -280,7 +280,7 @@ router.put("/:id/status", auth, async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
 
-    const allowed = new Set(["pending", "confirmed", "canceled"]);
+    const allowed = new Set(["PENDING_PAYMENT", "CONFIRMED", "CANCELLED_EXPIRED", "CANCELLED_MANUAL", "pending", "confirmed", "canceled"]);
     if (!allowed.has(String(status))) {
       return res.status(400).json({ error: "Estado inválido" });
     }

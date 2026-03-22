@@ -85,9 +85,33 @@ app.use("/api/payments", paymentsRoutes);
 
 /**
  * =========================
- * ✅ START SERVER
+ * ✅ START SERVER & CRON
  * =========================
  */
+const { PrismaClient } = require("@prisma/client");
+const prisma = new PrismaClient();
+
+// FASE 7: Garbage Collector - Limpia reservas vencidas cada 1 minuto
+setInterval(async () => {
+  try {
+    const expiredCount = await prisma.appointment.updateMany({
+      where: {
+        status: "PENDING_PAYMENT",
+        lockExpiresAt: { lte: new Date() }
+      },
+      data: {
+        status: "CANCELLED_EXPIRED",
+        lockExpiresAt: null
+      }
+    });
+    if (expiredCount.count > 0) {
+      console.log(`[Cron Fase 7] Liberados ${expiredCount.count} turnos vencidos.`);
+    }
+  } catch (err) {
+    console.error("[Cron] Error limpiando turnos:", err.message);
+  }
+}, 60000);
+
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
   console.log(`Servidor BarberCloud escuchando en puerto ${PORT}`);

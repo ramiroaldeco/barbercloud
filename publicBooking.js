@@ -129,7 +129,7 @@ async function computeSlots({ barbershopId, barberId, serviceId, date }) {
   const occupied = appts
     .filter(a => {
       // Si el turno está en pago, pero el lock expiró, lo ignoramos (vuelve a estar libre)
-      if (a.status === "payment_pending") {
+      if (a.status === "payment_pending" || a.status === "PENDING_PAYMENT") {
          return a.lockExpiresAt && new Date(a.lockExpiresAt) > nowLocal;
       }
       return true;
@@ -364,13 +364,11 @@ router.post("/:slug/book", async (req, res) => {
        isSplitPayment = true;
        finalAmountToCharge = totalToPay;
        finalTokenToUse = barber.mpAccessToken; // Se crea en nombre del barbero
-       finalStatus = "payment_pending"; // Requiere pago para confirmarse
+       finalStatus = "PENDING_PAYMENT"; // Fase 7: Requiere pago para confirmarse
        finalPaymentStatus = "unpaid";
     } else {
-       // CAMINO B: El backend pedía cobrar solo Fee. Si el dueño no tiene,
-       // por ahora dejaremos el turno "PENDIENTE" al instante sin checkout para fluidez.
-       // (Podríamos en el futuro abrir caja tuya directa, pero es mejor avisar que es en local)
-       finalStatus = "pending";
+       // CAMINO B: Presencial sin online fee
+       finalStatus = "CONFIRMED"; // Fase 7: Se confirma en el local directo
        finalPaymentStatus = "unpaid";
        finalAmountToCharge = 0; // Sin cobro online
     }
@@ -390,7 +388,7 @@ router.post("/:slug/book", async (req, res) => {
         paymentStatus: finalPaymentStatus,
         paymentProvider: "mercadopago",
         externalReference: externalReference,
-        lockExpiresAt: finalStatus === "payment_pending" ? lockExpiresAt : null,
+        lockExpiresAt: finalStatus === "PENDING_PAYMENT" ? lockExpiresAt : null,
         depositPercentageAtBooking: depositPct,
         servicePrice,
         depositAmount,
@@ -420,9 +418,9 @@ router.post("/:slug/book", async (req, res) => {
                email: customerEmail || "cliente@barbercloud.com"
              },
              back_urls: {
-               success: `${frontendBase}/book.html?slug=${slug}&status=success`,
-               failure: `${frontendBase}/book.html?slug=${slug}&status=failure`,
-               pending: `${frontendBase}/book.html?slug=${slug}&status=pending`
+               success: `${frontendBase}/payment-success.html?slug=${slug}&status=success`,
+               failure: `${frontendBase}/payment-failure.html?slug=${slug}&status=failure`,
+               pending: `${frontendBase}/payment-pending.html?slug=${slug}&status=pending`
              },
              auto_return: "approved",
              external_reference: externalReference,
@@ -486,6 +484,44 @@ router.post("/:slug/book", async (req, res) => {
     }
     console.error(e);
     return res.status(500).json({ error: "Error creando reserva" });
+  }
+});
+
+// =========================
+// ✅ GET /api/public/appointment-by-preference/:prefId (Fase 7: Para ticket de éxito)
+// =========================
+router.get("/appointment-by-preference/:prefId", async (req, res) => {
+  try {
+    const { prefId } = req.params;
+    const appt = await prisma.appointment.findUnique({
+      where: { externalReference: prefId },
+      include: {
+        barber: { select: { name: true } },
+        service: { select: { name: true } },
+        barbershop: { select: { name: true, slug: true, platformFee: true } }
+      }
+    });
+
+    if (!appt) return res.status(404).json({ error: "Turno no encontrado" });
+
+    // Si el turno expiro justo antes o durante el pago, pero MP ya cobró,
+    // podríamos regenerarlo o simplemente mostrarle que hable con el local.
+    // Asumiremos que el webhook lo pasará a CONFIRMED o ya lo hizo.
+    
+    return res.json({
+      id: appt.id,
+      date: appt.date,
+      time: appt.time,
+      serviceName: appt.service?.name,
+      barberName: appt.barber?.name,
+      barbershopName: appt.barbershop?.name,
+      slug: appt.barbershop?.slug,
+      status: appt.status,
+      depositAmount: appt.depositAmount,
+      totalAmount: appt.servicePrice
+    });
+  } catch (err) {
+    return res.status(500).json({ error: "Error interno" });
   }
 });
 

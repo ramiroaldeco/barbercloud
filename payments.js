@@ -191,14 +191,14 @@ router.post("/webhook", async (req, res) => {
 
     // 4. Idempotencia y Lógica de Confirmación
     // Si ya está confirmado, no hacemos nada.
-    if (appt.status === "confirmed") return;
+    if (appt.status === "CONFIRMED" || appt.status === "confirmed") return;
 
     if (status === "approved") {
       // ✅ Pago exitoso y acreditado
       await prisma.appointment.update({
         where: { id: appt.id },
         data: {
-          status: "confirmed",     // Turno formalizado
+          status: "CONFIRMED",     // Fase 7: Turno formalizado
           paymentStatus: "paid",   // Seña pagada
           lockExpiresAt: null      // Liberamos el timer de bloqueo
         }
@@ -213,7 +213,7 @@ router.post("/webhook", async (req, res) => {
       await prisma.appointment.update({
         where: { id: appt.id },
         data: {
-          status: "expired",
+          status: "CANCELLED_EXPIRED",
           lockExpiresAt: null
         }
       });
