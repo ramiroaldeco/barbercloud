@@ -29,7 +29,9 @@ router.get("/", auth, async (req, res) => {
 
     const where = { barbershopId: myBarbershopId };
 
-    if (status) where.status = String(status);
+    if (status) {
+      where.status = String(status);
+    }
 
     if (from || to) {
       where.date = {};
