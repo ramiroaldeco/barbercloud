@@ -338,9 +338,9 @@ router.post("/:slug/book", async (req, res) => {
 
     // Generar Referencia Única para MVP
     const externalReference = `BC_${shop.id}_${barber.id}_${Date.now()}`;
-    // Lock temporal de 10 min
+    // Lock temporal de 5 min (Fase 7.1)
     const lockExpiresAt = new Date();
-    lockExpiresAt.setMinutes(lockExpiresAt.getMinutes() + 10);
+    lockExpiresAt.setMinutes(lockExpiresAt.getMinutes() + 5);
 
     // Evaluamos Camino A (Conectado) vs Camino B (Desconectado)
     const canChargeDeposit = (barber.mpStatus === "CONNECTED" && barber.mpAccessToken);
@@ -474,6 +474,7 @@ router.post("/:slug/book", async (req, res) => {
       preferenceId: preferenceId,
       initPoint: initPoint,
       externalReference: externalReference,
+      lockExpiresAt: created.lockExpiresAt,
       mpPublicKey: process.env.MP_PUBLIC_KEY || "APP_USR-8baed143-a602-4fd6-912f-614742be1508" // Token dummy publico de prueba si no hay env
     });
 

@@ -91,7 +91,7 @@ app.use("/api/payments", paymentsRoutes);
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
-// FASE 7: Garbage Collector - Limpia reservas vencidas cada 1 minuto
+// FASE 7.1: Garbage Collector - Limpia reservas vencidas cada 10 segundos
 setInterval(async () => {
   try {
     const expiredCount = await prisma.appointment.updateMany({
@@ -105,12 +105,12 @@ setInterval(async () => {
       }
     });
     if (expiredCount.count > 0) {
-      console.log(`[Cron Fase 7] Liberados ${expiredCount.count} turnos vencidos.`);
+      console.log(`[Cron Fase 7.1] Liberados ${expiredCount.count} turnos vencidos.`);
     }
   } catch (err) {
     console.error("[Cron] Error limpiando turnos:", err.message);
   }
-}, 60000);
+}, 10000);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
