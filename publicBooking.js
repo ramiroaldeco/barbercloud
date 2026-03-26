@@ -313,7 +313,7 @@ router.post("/:slug/book", async (req, res) => {
 
     const barber = await prisma.barber.findFirst({
       where: { id: Number(barberId) },
-      select: { id: true, mpAccessToken: true, mpStatus: true, name: true }
+      select: { id: true, mpAccessToken: true, mpStatus: true, mpTokenExpiresAt: true, name: true }
     });
     if (!barber) return res.status(404).json({ error: "Barbero no encontrado" });
 
@@ -338,12 +338,17 @@ router.post("/:slug/book", async (req, res) => {
 
     // Generar Referencia Única para MVP
     const externalReference = `BC_${shop.id}_${barber.id}_${Date.now()}`;
-    // Lock temporal de 5 min (Fase 7.1)
+    // Lock temporal de 10 min (Fase 0: blindaje — MP necesita tiempo para redirección + pago + webhook)
     const lockExpiresAt = new Date();
-    lockExpiresAt.setMinutes(lockExpiresAt.getMinutes() + 5);
+    lockExpiresAt.setMinutes(lockExpiresAt.getMinutes() + 10);
 
     // Evaluamos Camino A (Conectado) vs Camino B (Desconectado)
-    const canChargeDeposit = (barber.mpStatus === "CONNECTED" && barber.mpAccessToken);
+    // Fase 0: También verificamos que el token no haya expirado
+    const tokenExpired = barber.mpTokenExpiresAt && new Date(barber.mpTokenExpiresAt) < new Date();
+    if (tokenExpired) {
+      console.warn(`[Book] Token MP del barbero ${barber.id} (${barber.name}) expirado. Tratando como desconectado.`);
+    }
+    const canChargeDeposit = (barber.mpStatus === "CONNECTED" && barber.mpAccessToken && !tokenExpired);
     const MP_ACCESS_TOKEN_OWNER = process.env.MP_ACCESS_TOKEN || ""; // El token de la plataforma SaaS (TÚ)
     
     // Si podemos cobrar seña, usamos el Token del Barbero. Si no, o cobramos solo Fee o lo dejamos pendiente.
@@ -394,8 +399,10 @@ router.post("/:slug/book", async (req, res) => {
         depositAmount,
         platformFee,
       },
-      select: { id: true },
+      select: { id: true, lockExpiresAt: true },
     });
+
+    console.log(`[Book] Turno ${created.id} creado. Estado: ${finalStatus}, Ref: ${externalReference}, Barbero: ${barber.id}`);
 
     if (isSplitPayment && finalTokenToUse) {
        // Llamada a MP para crear preferencia
@@ -428,6 +435,8 @@ router.post("/:slug/book", async (req, res) => {
              marketplace_fee: platformFee 
            };
 
+         console.log(`[Book] Creando preferencia MP para turno ${created.id}. Monto: $${finalAmountToCharge} (seña $${depositAmount} + fee $${platformFee})`);
+
          const mpRes = await fetch("https://api.mercadopago.com/checkout/preferences", {
            method: "POST",
            headers: {
@@ -448,23 +457,25 @@ router.post("/:slug/book", async (req, res) => {
               where: { id: created.id },
               data: { paymentId: preferenceId }
             });
+            console.log(`[Book] Preferencia MP creada OK: ${preferenceId} para turno ${created.id}`);
          } else {
-            console.error("MP Preference Error:", prefData);
-            // ❌ FASE 6 (DEBUG MOOD): Removemos el fallback temporalmente para ver POR QUÉ MP RECHAZA LA PREFERENCIA
+            console.error(`[Book] MP rechazó preferencia para turno ${created.id}. HTTP ${mpRes.status}:`, JSON.stringify(prefData));
             await prisma.appointment.delete({ where: { id: created.id } });
+            // Mostrar error amigable al usuario, sin exponer JSON crudo de MP
+            const reason = prefData.message || prefData.error || "Error desconocido de Mercado Pago";
             return res.status(400).json({ 
-              error: "Mercado Pago rechazó la preferencia de cobro. Razón: " + JSON.stringify(prefData)
+              error: `No se pudo crear el cobro de la seña. ${reason}. Intentá de nuevo o contactá a la barbería.`
             });
          }
        } catch (err) {
-         console.error("Fetch MP Error:", err);
+         console.error(`[Book] Error de red al crear preferencia MP para turno ${created.id}:`, err.message);
          await prisma.appointment.delete({ where: { id: created.id } });
-         return res.status(500).json({ error: "No se pudo conectar con Mercado Pago: " + err.message });
+         return res.status(500).json({ error: "No se pudo conectar con Mercado Pago. Intentá de nuevo en unos segundos." });
        }
-    } else if (finalDepositAmount > 0) {
-       // Si tenía que cobrar pero barber.mpStatus no es CONNECTED o el token es falso
-       await prisma.appointment.delete({ where: { id: created.id } });
-       return res.status(400).json({ error: "El barbero no terminó de vincular Mercado Pago correctamente. mpStatus != CONNECTED" });
+    } else if (depositAmount > 0) {
+       // Fase 0: El barbero debería cobrar seña pero no tiene MP conectado (o token expiró)
+       // En vez de bloquear la reserva, la creamos como CONFIRMED y el pago queda presencial
+       console.warn(`[Book] Barbero ${barber.id} (${barber.name}) sin MP activo pero servicio con seña $${depositAmount}. Turno ${created.id} confirmado sin cobro online.`);
     }
 
     return res.json({ 
@@ -494,7 +505,10 @@ router.post("/:slug/book", async (req, res) => {
 router.get("/appointment-by-preference/:prefId", async (req, res) => {
   try {
     const { prefId } = req.params;
-    const appt = await prisma.appointment.findUnique({
+
+    // Fase 0: Buscar primero por externalReference, luego por paymentId como fallback
+    // MP devuelve external_reference en la URL de success, pero si llega preference_id lo buscamos por paymentId
+    let appt = await prisma.appointment.findUnique({
       where: { externalReference: prefId },
       include: {
         barber: { select: { name: true } },
@@ -503,11 +517,19 @@ router.get("/appointment-by-preference/:prefId", async (req, res) => {
       }
     });
 
-    if (!appt) return res.status(404).json({ error: "Turno no encontrado" });
+    // Fallback: buscar por paymentId (que contiene el preference_id de MP)
+    if (!appt) {
+      appt = await prisma.appointment.findFirst({
+        where: { paymentId: prefId },
+        include: {
+          barber: { select: { name: true } },
+          service: { select: { name: true } },
+          barbershop: { select: { name: true, slug: true, platformFee: true } }
+        }
+      });
+    }
 
-    // Si el turno expiro justo antes o durante el pago, pero MP ya cobró,
-    // podríamos regenerarlo o simplemente mostrarle que hable con el local.
-    // Asumiremos que el webhook lo pasará a CONFIRMED o ya lo hizo.
+    if (!appt) return res.status(404).json({ error: "Turno no encontrado" });
     
     return res.json({
       id: appt.id,
@@ -522,6 +544,7 @@ router.get("/appointment-by-preference/:prefId", async (req, res) => {
       totalAmount: appt.servicePrice
     });
   } catch (err) {
+    console.error("[Book] Error buscando turno por preferencia:", err.message);
     return res.status(500).json({ error: "Error interno" });
   }
 });

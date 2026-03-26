@@ -156,18 +156,26 @@ router.post("/webhook", async (req, res) => {
     // Solo nos interesan los eventos de 'payment' y asegurarnos de tener IDs
     if (!paymentId || type !== "payment") return;
     if (!barberId) {
-      console.error("Webhook MP Error: Falta barberId en Query", req.query);
+      console.error("[Webhook] Falta barberId en query", req.query);
       return;
     }
+
+    console.log(`[Webhook] Recibido. PaymentId: ${paymentId}, BarberId: ${barberId}`);
 
     // 1. Buscar al barbero para usar su token (ya que recibió el pago)
     const barber = await prisma.barber.findUnique({
       where: { id: Number(barberId) },
-      select: { mpAccessToken: true }
+      select: { mpAccessToken: true, mpTokenExpiresAt: true }
     });
 
     if (!barber || !barber.mpAccessToken) {
-      console.error("Webhook MP Error: Barbero no tiene Token");
+      console.error(`[Webhook] Barbero ${barberId} no tiene token MP`);
+      return;
+    }
+
+    // Fase 0: Verificar si el token expiró
+    if (barber.mpTokenExpiresAt && new Date(barber.mpTokenExpiresAt) < new Date()) {
+      console.error(`[Webhook] Token MP del barbero ${barberId} expirado. No se puede verificar pago ${paymentId}`);
       return;
     }
 
@@ -177,39 +185,53 @@ router.post("/webhook", async (req, res) => {
     });
     
     const paymentData = await mpRes.json();
-    if (!mpRes.ok) throw new Error("Error fetching payment detail");
+    if (!mpRes.ok) {
+      console.error(`[Webhook] Error consultando pago ${paymentId} a MP. HTTP ${mpRes.status}:`, JSON.stringify(paymentData));
+      return;
+    }
 
     const { status, external_reference } = paymentData;
-    if (!external_reference) return;
+    if (!external_reference) {
+      console.warn(`[Webhook] Pago ${paymentId} sin external_reference. Ignorando.`);
+      return;
+    }
 
     // 3. Revisar el estado del turno actual en BD
     const appt = await prisma.appointment.findUnique({
       where: { externalReference: external_reference }
     });
 
-    if (!appt) return;
+    if (!appt) {
+      console.warn(`[Webhook] No se encontró turno con ref ${external_reference}. Posible webhook tardío de turno expirado.`);
+      return;
+    }
 
-    // 4. Idempotencia y Lógica de Confirmación
-    // Si ya está confirmado, no hacemos nada.
-    if (appt.status === "CONFIRMED" || appt.status === "confirmed") return;
+    // 4. Idempotencia robusta: verificar AMBOS campos status y paymentStatus
+    if (appt.status === "CONFIRMED" && appt.paymentStatus === "paid") {
+      console.log(`[Webhook] Turno ${appt.id} ya estaba CONFIRMED/paid. Ignorando duplicado. Pago: ${paymentId}`);
+      return;
+    }
+    if (appt.status === "CANCELLED_EXPIRED") {
+      console.warn(`[Webhook] Turno ${appt.id} ya expirado/cancelado. Pago ${paymentId} llegó tarde. Estado MP: ${status}`);
+      return;
+    }
+
+    console.log(`[Webhook] Procesando pago ${paymentId}. Estado MP: ${status}. Turno: ${appt.id} (status actual: ${appt.status})`);
 
     if (status === "approved") {
       // ✅ Pago exitoso y acreditado
       await prisma.appointment.update({
         where: { id: appt.id },
         data: {
-          status: "CONFIRMED",     // Fase 7: Turno formalizado
-          paymentStatus: "paid",   // Seña pagada
-          lockExpiresAt: null      // Liberamos el timer de bloqueo
+          status: "CONFIRMED",
+          paymentStatus: "paid",
+          lockExpiresAt: null
         }
       });
-      console.log(`[Webhook] Turno ${appt.id} CONFIRMADO. Pago ID: ${paymentId}`);
+      console.log(`[Webhook] ✅ Turno ${appt.id} CONFIRMADO. Pago ID: ${paymentId}`);
     } 
     else if (status === "rejected" || status === "cancelled") {
       // ❌ Pago falló o fue cancelado
-      // Si el lock aún está activo y falla, podríamos liberar el slot (null lock).
-      // Pero mejor lo pasamos a "canceled" para limpiar basura, o le quitamos el lockExpiresAt y status = "pending" si no querés borrar.
-      // Por limpieza, si un pago explícitamente se rechaza/cancela, lo pasaremos a expired para soltar el slot.
       await prisma.appointment.update({
         where: { id: appt.id },
         data: {
@@ -217,10 +239,15 @@ router.post("/webhook", async (req, res) => {
           lockExpiresAt: null
         }
       });
+      console.log(`[Webhook] ❌ Turno ${appt.id} cancelado por pago ${status}. Pago ID: ${paymentId}`);
+    }
+    else if (status === "pending" || status === "in_process") {
+      // ⏳ Pago pendiente (efectivo, transferencia, etc.) — no confirmamos ni cancelamos
+      console.log(`[Webhook] ⏳ Pago ${paymentId} pendiente (${status}). Turno ${appt.id} mantiene estado actual.`);
     }
 
   } catch (err) {
-    console.error("Webhook Error en Catch:", err.message);
+    console.error("[Webhook] Error en catch:", err.message);
   }
 });
 
