@@ -48,8 +48,10 @@ router.get("/", auth, async (req, res) => {
     }
 
     // Paginación (backward compatible: si no se envían parámetros, devuelve 50 por defecto)
-    const pageNum = Math.max(1, parseInt(req.query.page) || 1);
-    const limitNum = Math.min(200, Math.max(1, parseInt(req.query.limit) || 50));
+    const rawPage = parseInt(req.query.page, 10);
+    const rawLimit = parseInt(req.query.limit, 10);
+    const pageNum = isNaN(rawPage) ? 1 : Math.max(1, rawPage);
+    const limitNum = isNaN(rawLimit) ? 50 : Math.min(200, Math.max(1, rawLimit));
     const skip = (pageNum - 1) * limitNum;
 
     const [totalCount, items] = await Promise.all([

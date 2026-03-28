@@ -43,7 +43,7 @@ router.get("/", auth, async (req, res) => {
     });
 
     const isConfirmed = (s) => s === "CONFIRMED" || s === "confirmed";
-    const isCanceled = (s) => s.includes("CANCEL") || s.includes("cancel");
+    const isCanceled = (s) => s ? (String(s).includes("CANCEL") || String(s).includes("cancel")) : false;
 
     let totalNetIncome = 0;
     let confirmedCount = 0;
@@ -113,11 +113,12 @@ router.get("/", auth, async (req, res) => {
       // Client Metrics (agrupado por teléfono)
       if (a.customerPhone) {
         const p = a.customerPhone;
-        if (!clientMap[p]) clientMap[p] = { name: a.customerName, count: 0, spent: 0 };
+        const cName = a.customerName || "Sin Nombre";
+        if (!clientMap[p]) clientMap[p] = { name: cName, count: 0, spent: 0 };
         clientMap[p].count++;
         clientMap[p].spent += netIncome;
-        if (a.customerName.length > clientMap[p].name.length) {
-          clientMap[p].name = a.customerName;
+        if (cName.length > (clientMap[p].name || "").length) {
+          clientMap[p].name = cName;
         }
       }
     }
