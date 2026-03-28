@@ -79,7 +79,7 @@ router.get("/", auth, async (req, res) => {
     });
   } catch (e) {
     console.error(e);
-    return res.status(500).json({ error: "Error listando turnos: " + e.message, stack: e.stack });
+    return res.status(500).json({ error: "Error listando turnos: " + e.message });
   }
 });
 

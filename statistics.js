@@ -155,7 +155,7 @@ router.get("/", auth, async (req, res) => {
 
   } catch (err) {
     console.error("Error en endpoints analytics:", err);
-    res.status(500).json({ error: "Error procesando analíticas: " + err.message, stack: err.stack });
+    res.status(500).json({ error: "Error procesando analíticas: " + err.message });
   }
 });
 
