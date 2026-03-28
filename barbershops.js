@@ -40,9 +40,11 @@ function slugify(input) {
     .replace(/^-|-$/g, "");
 }
 
-// Público: lista barberías (demo)
+// Privado (solo plataforma): lista barberías — requiere x-admin-key
+// Antes era público y exponía todos los tenants sin autenticación
 router.get("/", async (req, res) => {
   try {
+    if (!requireAdminKeyIfConfigured(req, res)) return;
     const barbershops = await prisma.barbershop.findMany({
       select: { id: true, name: true, city: true, address: true, phone: true, slug: true },
       orderBy: { id: "desc" }

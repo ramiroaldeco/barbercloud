@@ -1,6 +1,6 @@
 const express = require("express");
 const jwt = require("jsonwebtoken");
-const axios = require("axios"); // Si no está axios, usaremos fetch nativo, pero asumo que en Node 18 fetch exite. 
+const crypto = require("crypto"); // nativo Node.js — sin instalación extra
 const prisma = require("./prisma");
 
 const router = express.Router();
@@ -9,13 +9,12 @@ const JWT_SECRET = process.env.JWT_SECRET || "supersecret_bc_2024";
 // Credenciales SaaS de Mercado Pago (Marketplace Owner)
 const MP_CLIENT_ID = process.env.MP_CLIENT_ID;
 const MP_CLIENT_SECRET = process.env.MP_CLIENT_SECRET;
-// URL de redirección (El SaaS recibe al barbero de vuelta)
 const MP_REDIRECT_URI = process.env.MP_REDIRECT_URI || "https://barbercloud.onrender.com/api/payments/oauth/callback";
 const FRONTEND_ADMIN_URL = process.env.FRONTEND_URL 
   ? `${process.env.FRONTEND_URL}/admin_v2.html#/miembros` 
   : "https://barberscloud.vercel.app/admin_v2.html#/miembros";
 
-// Middleware para decodificar al admin/owner logueado (necesario para la auth)
+// Middleware de auth owner
 async function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: "No token provided" });
@@ -29,6 +28,72 @@ async function requireAuth(req, res, next) {
   }
 }
 
+// =============================================================
+// HELPER: Verificar firma HMAC de Mercado Pago
+// MP envía el header x-signature con formato: ts=TIMESTAMP,v1=HASH
+// El hash se construye con: "ts:TIMESTAMP;v1:DATA_ID" 
+// firmado con HMAC-SHA256 usando el MP_WEBHOOK_SECRET del dashboard
+// Ref: https://www.mercadopago.com.ar/developers/es/docs/your-integrations/notifications/webhooks
+// =============================================================
+function verifyMPSignature(req) {
+  const secret = process.env.MP_WEBHOOK_SECRET;
+  
+  // Si no hay secret configurado, logueamos advertencia pero NO bloqueamos
+  // (para no romper instalaciones existentes que aún no lo hayan configurado)
+  if (!secret) {
+    console.warn("[Webhook] MP_WEBHOOK_SECRET no configurada — verificación de firma deshabilitada temporalmente");
+    return true;
+  }
+
+  const xSignature = req.headers["x-signature"];
+  const xRequestId = req.headers["x-request-id"];
+  
+  if (!xSignature) {
+    console.warn("[Webhook] Header x-signature ausente");
+    return false;
+  }
+
+  // Parsear ts y v1 del header
+  const parts = {};
+  xSignature.split(",").forEach(part => {
+    const [k, v] = part.split("=");
+    if (k && v) parts[k.trim()] = v.trim();
+  });
+  
+  const { ts, v1 } = parts;
+  if (!ts || !v1) {
+    console.warn("[Webhook] Header x-signature malformado:", xSignature);
+    return false;
+  }
+
+  // Verificar que el timestamp no sea muy viejo (replay attack protection - 5 min)
+  const now = Math.floor(Date.now() / 1000);
+  if (Math.abs(now - parseInt(ts)) > 300) {
+    console.warn(`[Webhook] Timestamp muy viejo o futuro: ts=${ts}, now=${now}`);
+    return false;
+  }
+
+  // Construir el manifest para la verificación
+  // MP usa: "id:{data.id};request-id:{x-request-id};ts:{ts};"
+  const dataId = req.body?.data?.id || req.query["data.id"] || req.query.id || "";
+  const manifest = `id:${dataId};request-id:${xRequestId || ""};ts:${ts};`;
+
+  const hmac = crypto.createHmac("sha256", secret);
+  hmac.update(manifest);
+  const expected = hmac.digest("hex");
+
+  const isValid = crypto.timingSafeEqual(
+    Buffer.from(expected, "hex"),
+    Buffer.from(v1, "hex")
+  );
+
+  if (!isValid) {
+    console.error(`[Webhook] ❌ Firma inválida. Expected: ${expected}, Got: ${v1}`);
+  }
+  
+  return isValid;
+}
+
 // -------------------------------------------------------------
 // 1) OAUTH: Redirigir al Barbero a Mercado Pago
 // -------------------------------------------------------------
@@ -40,13 +105,8 @@ router.get("/oauth/authorize", (req, res) => {
     return res.status(500).send("El dueño del SaaS aún no ha configurado MP_CLIENT_ID en Render.");
   }
 
-  // El state enviará el ID del barbero para que sepamos a quién asignarle el token al volver.
   const state = String(barberId);
-  
-  // URL de Mercado Pago para pedir permiso
   const authUrl = `https://auth.mercadopago.com.ar/authorization?client_id=${MP_CLIENT_ID}&response_type=code&platform_id=mp&state=${state}&redirect_uri=${MP_REDIRECT_URI}`;
-  
-  // Redirigimos al navegador a MP
   res.redirect(authUrl);
 });
 
@@ -55,8 +115,6 @@ router.get("/oauth/authorize", (req, res) => {
 // -------------------------------------------------------------
 router.get("/oauth/callback", async (req, res) => {
   const { code, state, error } = req.query;
-
-  // URL del frontend a donde mandarlo tras terminar
   const fallbackFrontendUrl = FRONTEND_ADMIN_URL;
 
   if (error || !code) {
@@ -75,7 +133,6 @@ router.get("/oauth/callback", async (req, res) => {
   }
 
   try {
-    // Intercambiar el CODE por el ACCESS_TOKEN
     const mpRes = await fetch("https://api.mercadopago.com/oauth/token", {
       method: "POST",
       headers: {
@@ -98,11 +155,9 @@ router.get("/oauth/callback", async (req, res) => {
       throw new Error(data.message || "Error al obtener tokens de Mercado Pago");
     }
 
-    // Calcular expiración aproxmada (vienen en segundos)
     const expiresAt = new Date();
-    expiresAt.setSeconds(expiresAt.getSeconds() + (data.expires_in || 15552000)); // Usualmente 180 días
+    expiresAt.setSeconds(expiresAt.getSeconds() + (data.expires_in || 15552000));
 
-    // Guardar en Prisma para este barbero
     await prisma.barber.update({
       where: { id: barberId },
       data: {
@@ -114,7 +169,6 @@ router.get("/oauth/callback", async (req, res) => {
       }
     });
 
-    // Éxito. Le avisamos al usuario y cerramos o redirigimos.
     return res.send(`
       <style>body{font-family:sans-serif;background:#000;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;}</style>
       <h2 style="color:#00e676">¡Cuenta de Mercado Pago Conectada!</h2>
@@ -149,11 +203,16 @@ router.post("/webhook", async (req, res) => {
   res.status(200).send("OK");
 
   try {
+    // ✅ FIX CRÍTICO: Verificar firma HMAC antes de procesar
+    if (!verifyMPSignature(req)) {
+      console.error("[Webhook] ❌ Firma inválida — request rechazado silenciosamente");
+      return;
+    }
+
     const { type, data } = req.body;
     const paymentId = data?.id || req.query["data.id"] || req.query.id;
-    const barberId = req.query.barberId; // Lo inyectamos en notification_url
+    const barberId = req.query.barberId;
     
-    // Solo nos interesan los eventos de 'payment' y asegurarnos de tener IDs
     if (!paymentId || type !== "payment") return;
     if (!barberId) {
       console.error("[Webhook] Falta barberId en query", req.query);
@@ -162,10 +221,10 @@ router.post("/webhook", async (req, res) => {
 
     console.log(`[Webhook] Recibido. PaymentId: ${paymentId}, BarberId: ${barberId}`);
 
-    // 1. Buscar al barbero para usar su token (ya que recibió el pago)
+    // 1. Buscar al barbero para usar su token
     const barber = await prisma.barber.findUnique({
       where: { id: Number(barberId) },
-      select: { mpAccessToken: true, mpTokenExpiresAt: true }
+      select: { mpAccessToken: true, mpTokenExpiresAt: true, barbershopId: true }
     });
 
     if (!barber || !barber.mpAccessToken) {
@@ -173,13 +232,13 @@ router.post("/webhook", async (req, res) => {
       return;
     }
 
-    // Fase 0: Verificar si el token expiró
+    // Verificar si el token expiró
     if (barber.mpTokenExpiresAt && new Date(barber.mpTokenExpiresAt) < new Date()) {
       console.error(`[Webhook] Token MP del barbero ${barberId} expirado. No se puede verificar pago ${paymentId}`);
       return;
     }
 
-    // 2. Traer el detalle real del pago desde MP (verificación de seguridad)
+    // 2. Traer el detalle real del pago desde MP
     const mpRes = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
       headers: { "Authorization": `Bearer ${barber.mpAccessToken}` }
     });
@@ -196,30 +255,36 @@ router.post("/webhook", async (req, res) => {
       return;
     }
 
-    // 3. Revisar el estado del turno actual en BD
+    // 3. Buscar el turno en DB
     const appt = await prisma.appointment.findUnique({
       where: { externalReference: external_reference }
     });
 
     if (!appt) {
-      console.warn(`[Webhook] No se encontró turno con ref ${external_reference}. Posible webhook tardío de turno expirado.`);
+      console.warn(`[Webhook] No se encontró turno con ref ${external_reference}.`);
       return;
     }
 
-    // 4. Idempotencia robusta: verificar AMBOS campos status y paymentStatus
+    // ✅ FIX CRÍTICO: Verificar que el barbero del webhook pertenezca a la misma barbería del turno
+    // Esto previene que un atacante use el barberId de otra barbería para procesar pagos cruzados
+    if (barber.barbershopId !== appt.barbershopId) {
+      console.error(`[Webhook] ❌ Cross-tenant attack detectado: barbero ${barberId} (barbershopId=${barber.barbershopId}) no pertenece a la barbería del turno (barbershopId=${appt.barbershopId})`);
+      return;
+    }
+
+    // 4. Idempotencia
     if (appt.status === "CONFIRMED" && appt.paymentStatus === "paid") {
-      console.log(`[Webhook] Turno ${appt.id} ya estaba CONFIRMED/paid. Ignorando duplicado. Pago: ${paymentId}`);
+      console.log(`[Webhook] Turno ${appt.id} ya estaba CONFIRMED/paid. Ignorando duplicado.`);
       return;
     }
     if (appt.status === "CANCELLED_EXPIRED") {
-      console.warn(`[Webhook] Turno ${appt.id} ya expirado/cancelado. Pago ${paymentId} llegó tarde. Estado MP: ${status}`);
+      console.warn(`[Webhook] Turno ${appt.id} ya expirado/cancelado. Pago ${paymentId} llegó tarde.`);
       return;
     }
 
-    console.log(`[Webhook] Procesando pago ${paymentId}. Estado MP: ${status}. Turno: ${appt.id} (status actual: ${appt.status})`);
+    console.log(`[Webhook] Procesando pago ${paymentId}. Estado MP: ${status}. Turno: ${appt.id}`);
 
     if (status === "approved") {
-      // ✅ Pago exitoso y acreditado
       await prisma.appointment.update({
         where: { id: appt.id },
         data: {
@@ -231,7 +296,6 @@ router.post("/webhook", async (req, res) => {
       console.log(`[Webhook] ✅ Turno ${appt.id} CONFIRMADO. Pago ID: ${paymentId}`);
     } 
     else if (status === "rejected" || status === "cancelled") {
-      // ❌ Pago falló o fue cancelado
       await prisma.appointment.update({
         where: { id: appt.id },
         data: {
@@ -239,11 +303,10 @@ router.post("/webhook", async (req, res) => {
           lockExpiresAt: null
         }
       });
-      console.log(`[Webhook] ❌ Turno ${appt.id} cancelado por pago ${status}. Pago ID: ${paymentId}`);
+      console.log(`[Webhook] ❌ Turno ${appt.id} cancelado por pago ${status}.`);
     }
     else if (status === "pending" || status === "in_process") {
-      // ⏳ Pago pendiente (efectivo, transferencia, etc.) — no confirmamos ni cancelamos
-      console.log(`[Webhook] ⏳ Pago ${paymentId} pendiente (${status}). Turno ${appt.id} mantiene estado actual.`);
+      console.log(`[Webhook] ⏳ Pago ${paymentId} pendiente (${status}). Turno ${appt.id} mantiene estado.`);
     }
 
   } catch (err) {

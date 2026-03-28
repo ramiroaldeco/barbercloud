@@ -75,9 +75,9 @@ model Appointment {
   date          String
   time          String
 
-  // estados SaaS
-  status        String   @default("pending") // pending | confirmed | canceled
-  paymentStatus String   @default("unpaid")  // unpaid | paid | refunded
+  // estados SaaS — siempre UPPERCASE para consistencia con el cron GC
+  status        String   @default("CONFIRMED") // CONFIRMED | PENDING_PAYMENT | CANCELLED_EXPIRED | CANCELLED_MANUAL
+  paymentStatus String   @default("unpaid")    // unpaid | paid | refunded
 
   // snapshot al momento de reservar
   depositPercentageAtBooking Int @default(0)

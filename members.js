@@ -47,7 +47,19 @@ router.post("/", auth, async (req, res) => {
     const { name, role, avatarBase64, servicesIds } = req.body;
     if (!name?.trim()) return res.status(400).json({ error: "Nombre es obligatorio" });
 
-    // Ensure we do not exceed payload limitations visually (avatarBase64) -- Express limit handled via bodyParser config if needed, we'll keep it simple here.
+    // ✅ FIX: Validar que todos los serviceIds pertenezcan a esta barbería (evita cross-tenant injection)
+    if (servicesIds && servicesIds.length > 0) {
+      const validServices = await prisma.service.findMany({
+        where: {
+          id: { in: servicesIds.map(id => Number(id)) },
+          barbershopId: req.user.barbershopId
+        },
+        select: { id: true }
+      });
+      if (validServices.length !== servicesIds.length) {
+        return res.status(400).json({ error: "Uno o más servicios no pertenecen a esta barbería" });
+      }
+    }
 
     const newBarber = await prisma.barber.create({
       data: {
@@ -83,6 +95,20 @@ router.put("/:id", auth, async (req, res) => {
     if (!exists) return res.status(404).json({ error: "Miembro no encontrado" });
 
     const { name, role, avatarBase64, isActive, servicesIds } = req.body;
+
+    // ✅ FIX: Validar que todos los serviceIds pertenezcan a esta barbería
+    if (servicesIds && servicesIds.length > 0) {
+      const validServices = await prisma.service.findMany({
+        where: {
+          id: { in: servicesIds.map(sid => Number(sid)) },
+          barbershopId: req.user.barbershopId
+        },
+        select: { id: true }
+      });
+      if (validServices.length !== servicesIds.length) {
+        return res.status(400).json({ error: "Uno o más servicios no pertenecen a esta barbería" });
+      }
+    }
 
     const updated = await prisma.barber.update({
       where: { id },

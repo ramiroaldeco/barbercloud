@@ -4,11 +4,17 @@ const auth = require("./authMiddleware");
 
 const router = express.Router();
 
-function getISODateString(dateObj) {
-  const y = dateObj.getFullYear();
-  const m = String(dateObj.getMonth() + 1).padStart(2, "0");
-  const d = String(dateObj.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+// ✅ FIX: Calcular fecha en timezone Argentina en vez de UTC
+// Render corre en UTC — sin esto un turno del Miércoles 01:00 ARG aparece en martes
+function getArgDateString(dateObj) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    year: "numeric", month: "2-digit", day: "2-digit"
+  }).format(dateObj);
+}
+
+function getArgMonthKey(dateISO) {
+  return dateISO.substring(0, 7); // "YYYY-MM"
 }
 
 router.get("/", auth, async (req, res) => {
@@ -16,21 +22,19 @@ router.get("/", auth, async (req, res) => {
     const myBarbershopId = req.user?.barbershopId;
     if (!myBarbershopId) return res.status(403).json({ error: "Falta barbershopId" });
 
-    // Rango de días (por defecto 30)
     const days = parseInt(req.query.days) || 30;
+
+    // ✅ FIX: Usar fecha Argentina real como "hoy"
+    const todayArg = getArgDateString(new Date());
     
-    const todayObj = new Date();
-    const toDate = getISODateString(todayObj);
-
     const fromDateObj = new Date();
-    fromDateObj.setDate(todayObj.getDate() - days + 1);
-    const fromDate = getISODateString(fromDateObj);
+    fromDateObj.setDate(fromDateObj.getDate() - days + 1);
+    const fromDateArg = getArgDateString(fromDateObj);
 
-    // Fetch all records in range to compute both confirmed metrics and cancellation ratio
     const items = await prisma.appointment.findMany({
       where: {
         barbershopId: myBarbershopId,
-        date: { gte: fromDate, lte: toDate }
+        date: { gte: fromDateArg, lte: todayArg }
       },
       include: {
         barber: true,
@@ -45,48 +49,45 @@ router.get("/", auth, async (req, res) => {
     let confirmedCount = 0;
     let canceledCount = 0;
 
-    const tsMap = {}; // timeseries
-    const barberMap = {}; // income/count by barber
-    const serviceMap = {}; // income/count by service
-    const clientMap = {}; // frequency by client
+    const tsMap = {};
+    const barberMap = {};
+    const serviceMap = {};
+    const clientMap = {};
 
-    // Pre-poblar el timeseries para no tener huecos visuales
     const isYear = days >= 365;
     if (!isYear) {
       for (let i = 0; i < days; i++) {
         const d = new Date(fromDateObj);
         d.setDate(d.getDate() + i);
-        tsMap[getISODateString(d)] = { income: 0, appointments: 0 };
+        tsMap[getArgDateString(d)] = { income: 0, appointments: 0 };
       }
     } else {
-      // Para un año, la mínima resolución es mes
       for (let i = 0; i < 12; i++) {
-        const d = new Date(todayObj);
+        const d = new Date();
         d.setMonth(d.getMonth() - i);
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, "0");
-        tsMap[`${y}-${m}`] = { income: 0, appointments: 0 };
+        tsMap[getArgMonthKey(getArgDateString(d))] = { income: 0, appointments: 0 };
       }
     }
 
-    // Single-pass computation 
     for (const a of items) {
       if (isCanceled(a.status)) {
         canceledCount++;
         continue;
       }
 
-      if (!isConfirmed(a.status)) continue; // ignore "pending" or explicit ignores
+      if (!isConfirmed(a.status)) continue;
 
-      const netIncome = a.servicePrice || 0;
-      
+      // ✅ FIX: Usar depositAmount (lo que realmente cobró) en vez de servicePrice (precio total)
+      // Si depositAmount es 0, el pago se hace presencial — se registra como 0 online
+      const netIncome = a.depositAmount > 0 ? a.depositAmount : (a.servicePrice || 0);
+
       totalNetIncome += netIncome;
       confirmedCount++;
 
-      // 1. Timeseries Evolution
+      // Timeseries
       let dateKey = a.date;
       if (isYear) {
-        dateKey = dateKey.substring(0, 7); // "YYYY-MM"
+        dateKey = getArgMonthKey(a.date);
       }
       if (tsMap[dateKey]) {
         tsMap[dateKey].income += netIncome;
@@ -95,54 +96,48 @@ router.get("/", auth, async (req, res) => {
         tsMap[dateKey] = { income: netIncome, appointments: 1 };
       }
 
-      // 2. Barber Metrics
+      // Barber Metrics
       if (a.barber) {
         if (!barberMap[a.barber.name]) barberMap[a.barber.name] = { income: 0, count: 0 };
         barberMap[a.barber.name].income += netIncome;
         barberMap[a.barber.name].count++;
       }
 
-      // 3. Service Metrics
+      // Service Metrics
       if (a.service) {
         if (!serviceMap[a.service.name]) serviceMap[a.service.name] = { income: 0, count: 0 };
         serviceMap[a.service.name].income += netIncome;
         serviceMap[a.service.name].count++;
       }
 
-      // 4. Client Metrics (group by phone to handle typos in name)
+      // Client Metrics (agrupado por teléfono)
       if (a.customerPhone) {
         const p = a.customerPhone;
         if (!clientMap[p]) clientMap[p] = { name: a.customerName, count: 0, spent: 0 };
         clientMap[p].count++;
         clientMap[p].spent += netIncome;
-        // always keep the latest/longest name found for this phone
         if (a.customerName.length > clientMap[p].name.length) {
           clientMap[p].name = a.customerName;
         }
       }
     }
 
-    // Convert Maps to sorted arrays for the frontend charts
-    // Timeseries
     const timeseries = Object.keys(tsMap).sort().map(k => ({ date: k, income: tsMap[k].income, appointments: tsMap[k].appointments }));
-    
-    // Barbers
     const barbersData = Object.keys(barberMap).map(k => ({ name: k, ...barberMap[k] })).sort((a, b) => b.income - a.income);
-    
-    // Services
     const servicesData = Object.keys(serviceMap).map(k => ({ name: k, ...serviceMap[k] })).sort((a, b) => b.income - a.income);
-
-    // Clients
-    const topClients = Object.values(clientMap).sort((a, b) => b.count - a.count).slice(0, 5); // top 5
-
-    // Ticket
+    const topClients = Object.values(clientMap).sort((a, b) => b.count - a.count).slice(0, 5);
     const averageTicket = confirmedCount > 0 ? Math.round(totalNetIncome / confirmedCount) : 0;
+
+    // Tasa de cancelación
+    const totalProcessed = confirmedCount + canceledCount;
+    const cancellationRate = totalProcessed > 0 ? Math.round((canceledCount / totalProcessed) * 100) : 0;
 
     res.json({
       summary: {
         totalNetIncome,
         confirmedCount,
         canceledCount,
+        cancellationRate,
         averageTicket,
         topBarber: barbersData.length > 0 ? barbersData[0].name : "-",
         topClient: topClients.length > 0 ? topClients[0].name : "-",

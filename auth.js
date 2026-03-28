@@ -53,7 +53,7 @@ router.post('/login', async (req, res) => {
     const token = jwt.sign(
       { userId: user.id, barbershopId: user.barbershopId, role: user.role },
       process.env.JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: '30d' } // Consistent with onboarding signup
     );
 
     res.json({

@@ -174,9 +174,11 @@ async function computeSlots({ barbershopId, barberId, serviceId, date }) {
       const isBlocked = blockedIntervals.some(b => overlaps(candStart, candEnd, b.start, b.end));
       
       if (isBlocked) {
-         // Salto heurístico: avanzar el cursor al final del bloqueo para buscar del otro lado (simplificación por array length)
-         cursor += duration; // Forzamos avance lineal 
-         continue;
+        // ✅ FIX: Avanzar el cursor al FINAL del bloqueo que nos impide, no solo duration minutos.
+        // El bug anterior hacía: cursor += duration, lo que podía aterrizar dentro del bloqueo todavía.
+        const blockingInterval = blockedIntervals.find(b => overlaps(candStart, candEnd, b.start, b.end));
+        cursor = blockingInterval ? blockingInterval.end : (candEnd);
+        continue;
       }
 
       // 2. Verificar si choca con algún turno ocupado existente
@@ -486,7 +488,9 @@ router.post("/:slug/book", async (req, res) => {
       initPoint: initPoint,
       externalReference: externalReference,
       lockExpiresAt: created.lockExpiresAt,
-      mpPublicKey: process.env.MP_PUBLIC_KEY || "APP_USR-8baed143-a602-4fd6-912f-614742be1508" // Token dummy publico de prueba si no hay env
+      // ✅ FIX: Si MP_PUBLIC_KEY no está en env vars, retornar error explícito en vez de usar key hardcodeada
+      // Una key hardcodeada incorrecta hace que el SDK de MP falle silenciosamente
+      mpPublicKey: process.env.MP_PUBLIC_KEY || null
     });
 
   } catch (e) {

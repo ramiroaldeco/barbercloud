@@ -154,7 +154,8 @@ router.post("/owner", auth, async (req, res) => {
     const depositAmount = Math.round((price * Number(depositPct || 0)) / 100);
     const totalToPay = depositAmount + fee;
 
-    const allowedStatus = new Set(["PENDING_PAYMENT", "CONFIRMED", "CANCELLED_EXPIRED", "CANCELLED_MANUAL", "pending", "confirmed", "canceled"]);
+    // ✅ FIX: Solo estados UPPERCASE para evitar estados fantasma con el cron
+    const allowedStatus = new Set(["PENDING_PAYMENT", "CONFIRMED", "CANCELLED_EXPIRED", "CANCELLED_MANUAL"]);
     const finalStatus = allowedStatus.has(String(status)) ? String(status) : "CONFIRMED";
 
     const created = await prisma.appointment.create({
@@ -282,7 +283,8 @@ router.put("/:id/status", auth, async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
 
-    const allowed = new Set(["PENDING_PAYMENT", "CONFIRMED", "CANCELLED_EXPIRED", "CANCELLED_MANUAL", "pending", "confirmed", "canceled"]);
+    // ✅ FIX: Solo estados UPPERCASE para consistencia
+    const allowed = new Set(["PENDING_PAYMENT", "CONFIRMED", "CANCELLED_EXPIRED", "CANCELLED_MANUAL"]);
     if (!allowed.has(String(status))) {
       return res.status(400).json({ error: "Estado inválido" });
     }
