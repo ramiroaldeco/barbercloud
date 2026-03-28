@@ -1,7 +1,8 @@
 const express = require("express");
 const jwt = require("jsonwebtoken");
-const crypto = require("crypto"); // nativo Node.js — sin instalación extra
+const crypto = require("crypto");
 const prisma = require("./prisma");
+const auth = require("./authMiddleware"); // ✅ Reutilizamos el middleware de auth existente
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || "supersecret_bc_2024";
@@ -14,7 +15,7 @@ const FRONTEND_ADMIN_URL = process.env.FRONTEND_URL
   ? `${process.env.FRONTEND_URL}/admin_v2.html#/miembros` 
   : "https://barberscloud.vercel.app/admin_v2.html#/miembros";
 
-// Middleware de auth owner
+// Middleware de auth owner (viejo, se mantiene por compatibilidad)
 async function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: "No token provided" });
@@ -25,6 +26,67 @@ async function requireAuth(req, res, next) {
     next();
   } catch (err) {
     return res.status(401).json({ error: "Invalid token" });
+  }
+}
+
+// =============================================================
+// HELPER: Refrescar token de MP expirado automáticamente
+// Cuando el token (~180 días) expira, intentamos renovarlo con el refresh_token
+// Si la renovación falla, el sistema sigue como si el barbero estuviera desconectado
+// =============================================================
+async function refreshMPToken(barberId) {
+  try {
+    const barber = await prisma.barber.findUnique({
+      where: { id: barberId },
+      select: { mpRefreshToken: true }
+    });
+
+    if (!barber?.mpRefreshToken) {
+      console.warn(`[RefreshToken] Barbero ${barberId} no tiene refresh_token guardado`);
+      return null;
+    }
+
+    const mpRes = await fetch("https://api.mercadopago.com/oauth/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
+      body: new URLSearchParams({
+        client_id: process.env.MP_CLIENT_ID,
+        client_secret: process.env.MP_CLIENT_SECRET,
+        grant_type: "refresh_token",
+        refresh_token: barber.mpRefreshToken
+      })
+    });
+
+    const data = await mpRes.json();
+
+    if (!mpRes.ok || !data.access_token) {
+      console.error(`[RefreshToken] Error renovando token barbero ${barberId}:`, JSON.stringify(data));
+      await prisma.barber.update({
+        where: { id: barberId },
+        data: { mpStatus: "ERROR" }
+      });
+      return null;
+    }
+
+    const expiresAt = new Date();
+    expiresAt.setSeconds(expiresAt.getSeconds() + (data.expires_in || 15552000));
+
+    await prisma.barber.update({
+      where: { id: barberId },
+      data: {
+        mpAccessToken: data.access_token,
+        mpRefreshToken: data.refresh_token || barber.mpRefreshToken,
+        mpTokenExpiresAt: expiresAt,
+        mpStatus: "CONNECTED"
+      }
+    });
+
+    console.log(`[RefreshToken] ✅ Token MP del barbero ${barberId} renovado. Nuevo vencimiento: ${expiresAt.toISOString()}`);
+    return data.access_token;
+
+  } catch (err) {
+    console.error(`[RefreshToken] Error inesperado renovando token barbero ${barberId}:`, err.message);
+    return null;
   }
 }
 
@@ -285,12 +347,14 @@ router.post("/webhook", async (req, res) => {
     console.log(`[Webhook] Procesando pago ${paymentId}. Estado MP: ${status}. Turno: ${appt.id}`);
 
     if (status === "approved") {
+      // ✅ FIX: Guardar el realPaymentId de MP (necesario para emitir reembolsos)
       await prisma.appointment.update({
         where: { id: appt.id },
         data: {
           status: "CONFIRMED",
           paymentStatus: "paid",
-          lockExpiresAt: null
+          lockExpiresAt: null,
+          realPaymentId: String(paymentId) // Guardamos el ID real del pago (no el de la preferencia)
         }
       });
       console.log(`[Webhook] ✅ Turno ${appt.id} CONFIRMADO. Pago ID: ${paymentId}`);
@@ -314,4 +378,112 @@ router.post("/webhook", async (req, res) => {
   }
 });
 
-module.exports = { router };
+// -------------------------------------------------------------
+// 4) REEMBOLSO: Devolver seña a cliente
+// POST /api/payments/refund/:appointmentId
+// Requiere: token de owner válido, turno con paymentStatus=paid y realPaymentId
+// -------------------------------------------------------------
+router.post("/refund/:appointmentId", auth, async (req, res) => {
+  try {
+    const apptId = Number(req.params.appointmentId);
+    if (isNaN(apptId)) return res.status(400).json({ error: "ID de turno inválido" });
+
+    // Buscar el turno y verificar ownership
+    const appt = await prisma.appointment.findUnique({
+      where: { id: apptId },
+      select: {
+        id: true,
+        barbershopId: true,
+        status: true,
+        paymentStatus: true,
+        realPaymentId: true,
+        depositAmount: true,
+        barberId: true,
+        customerName: true
+      }
+    });
+
+    if (!appt) return res.status(404).json({ error: "Turno no encontrado" });
+
+    // Verificar que el turno pertenece a la barbería del owner logueado
+    if (appt.barbershopId !== req.user.barbershopId) {
+      return res.status(403).json({ error: "No autorizado" });
+    }
+
+    // Solo se puede reembolsar si está pagado
+    if (appt.paymentStatus !== "paid") {
+      return res.status(400).json({ error: `El turno no está pagado (estado: ${appt.paymentStatus})` });
+    }
+
+    // Necesitamos el realPaymentId para llamar a MP
+    if (!appt.realPaymentId) {
+      return res.status(400).json({ 
+        error: "No se puede emitir reembolso automático: el ID de pago real no está registrado. Puede que el pago fue procesado antes de esta versión. Realizá el reembolso manual desde el panel de Mercado Pago."
+      });
+    }
+
+    // Obtener el token del barbero
+    const barber = await prisma.barber.findUnique({
+      where: { id: appt.barberId },
+      select: { id: true, mpAccessToken: true, mpTokenExpiresAt: true, mpStatus: true }
+    });
+
+    if (!barber?.mpAccessToken) {
+      return res.status(400).json({ error: "El barbero no tiene Mercado Pago conectado" });
+    }
+
+    // Refrescar token si expiró
+    let token = barber.mpAccessToken;
+    if (barber.mpTokenExpiresAt && new Date(barber.mpTokenExpiresAt) < new Date()) {
+      console.warn(`[Refund] Token del barbero ${barber.id} expirado. Intentando renovar...`);
+      token = await refreshMPToken(barber.id);
+      if (!token) {
+        return res.status(400).json({ error: "El token de Mercado Pago expiró y no se pudo renovar. Reconectá MP desde el panel." });
+      }
+    }
+
+    // Llamar a la API de reembolso de MP
+    const mpRes = await fetch(`https://api.mercadopago.com/v1/payments/${appt.realPaymentId}/refunds`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({}) // Reembolso total (sin body = monto completo)
+    });
+
+    const mpData = await mpRes.json();
+
+    if (!mpRes.ok) {
+      console.error(`[Refund] Error MP al reembolsar turno ${apptId}:`, JSON.stringify(mpData));
+      return res.status(400).json({ 
+        error: `Mercado Pago rechazó el reembolso: ${mpData.message || mpData.error || "Error desconocido"}`
+      });
+    }
+
+    // Actualizar estado en DB
+    await prisma.appointment.update({
+      where: { id: apptId },
+      data: {
+        paymentStatus: "refunded",
+        status: "CANCELLED_MANUAL"
+      }
+    });
+
+    console.log(`[Refund] ✅ Reembolso emitido para turno ${apptId}. MP Refund ID: ${mpData.id}`);
+
+    return res.json({ 
+      ok: true, 
+      message: `Reembolso de $${appt.depositAmount} procesado para ${appt.customerName}`,
+      refundId: mpData.id,
+      amount: mpData.amount
+    });
+
+  } catch (err) {
+    console.error("[Refund] Error inesperado:", err.message);
+    return res.status(500).json({ error: "Error procesando reembolso" });
+  }
+});
+
+module.exports = { router, refreshMPToken };
+

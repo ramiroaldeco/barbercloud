@@ -47,16 +47,34 @@ router.get("/", auth, async (req, res) => {
       ];
     }
 
-    const items = await prisma.appointment.findMany({
-      where,
-      orderBy: [{ date: "asc" }, { time: "asc" }],
-      include: {
-        service: { select: { id: true, name: true, durationMinutes: true } },
-        barber: { select: { id: true, name: true } },
-      },
-    });
+    // Paginación (backward compatible: si no se envían parámetros, devuelve 50 por defecto)
+    const pageNum = Math.max(1, parseInt(req.query.page) || 1);
+    const limitNum = Math.min(200, Math.max(1, parseInt(req.query.limit) || 50));
+    const skip = (pageNum - 1) * limitNum;
 
-    return res.json(items); // mantenemos array
+    const [totalCount, items] = await Promise.all([
+      prisma.appointment.count({ where }),
+      prisma.appointment.findMany({
+        where,
+        orderBy: [{ date: "asc" }, { time: "asc" }],
+        include: {
+          service: { select: { id: true, name: true, durationMinutes: true } },
+          barber: { select: { id: true, name: true } },
+        },
+        skip,
+        take: limitNum,
+      })
+    ]);
+
+    return res.json({ 
+      items, 
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        totalCount,
+        totalPages: Math.ceil(totalCount / limitNum)
+      }
+    });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: "Error listando turnos" });

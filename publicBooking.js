@@ -1,6 +1,8 @@
 // publicBooking.js
 const express = require("express");
 const prisma = require("./prisma");
+// refreshMPToken importado de payments.js para auto-renovar tokens expirados
+const { refreshMPToken } = require("./payments");
 
 const router = express.Router();
 
@@ -345,12 +347,19 @@ router.post("/:slug/book", async (req, res) => {
     lockExpiresAt.setMinutes(lockExpiresAt.getMinutes() + 10);
 
     // Evaluamos Camino A (Conectado) vs Camino B (Desconectado)
-    // Fase 0: También verificamos que el token no haya expirado
+    // Fase 0: Verificar si el token expiró — e intentar renovarlo automáticamente
     const tokenExpired = barber.mpTokenExpiresAt && new Date(barber.mpTokenExpiresAt) < new Date();
+    let activeToken = barber.mpAccessToken;
     if (tokenExpired) {
-      console.warn(`[Book] Token MP del barbero ${barber.id} (${barber.name}) expirado. Tratando como desconectado.`);
+      console.warn(`[Book] Token MP del barbero ${barber.id} (${barber.name}) expirado. Intentando renovar automáticamente...`);
+      activeToken = await refreshMPToken(barber.id);
+      if (!activeToken) {
+        console.warn(`[Book] No se pudo renovar el token del barbero ${barber.id}. Tratando como desconectado.`);
+      } else {
+        console.log(`[Book] ✅ Token del barbero ${barber.id} renovado exitosamente.`);
+      }
     }
-    const canChargeDeposit = (barber.mpStatus === "CONNECTED" && barber.mpAccessToken && !tokenExpired);
+    const canChargeDeposit = (barber.mpStatus === "CONNECTED" && activeToken);
     const MP_ACCESS_TOKEN_OWNER = process.env.MP_ACCESS_TOKEN || ""; // El token de la plataforma SaaS (TÚ)
     
     // Si podemos cobrar seña, usamos el Token del Barbero. Si no, o cobramos solo Fee o lo dejamos pendiente.

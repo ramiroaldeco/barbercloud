@@ -68,7 +68,8 @@ model Appointment {
 
   // ✅ FASE 6: Pagos y Locks
   paymentProvider     String?  @default("mercadopago")
-  paymentId           String?
+  paymentId           String?  // preference_id de MP
+  realPaymentId       String?  // payment_id real de MP (se llena desde webhook al confirmar pago)
   externalReference   String?  @unique
   lockExpiresAt       DateTime?
 
@@ -104,6 +105,10 @@ model BarbershopUser {
   email        String     @unique
   passwordHash String
   role         String     @default("owner")
+
+  // Recuperación de contraseña
+  passwordResetToken   String?   @unique
+  passwordResetExpires DateTime?
 
   createdAt    DateTime   @default(now())
 }

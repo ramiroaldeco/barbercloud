@@ -2,7 +2,9 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const prisma = require('./prisma');
+const { sendPasswordResetEmail } = require('./emailService');
 
 const router = express.Router();
 
@@ -53,7 +55,7 @@ router.post('/login', async (req, res) => {
     const token = jwt.sign(
       { userId: user.id, barbershopId: user.barbershopId, role: user.role },
       process.env.JWT_SECRET,
-      { expiresIn: '30d' } // Consistent with onboarding signup
+      { expiresIn: '30d' }
     );
 
     res.json({
@@ -64,6 +66,97 @@ router.post('/login', async (req, res) => {
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Error al iniciar sesión' });
+  }
+});
+
+// ─────────────────────────────────────────────
+// Recuperación de contraseña
+// POST /api/auth/forgot-password { email }
+// ─────────────────────────────────────────────
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ ok: false, error: 'Falta email' });
+
+    // Siempre respondemos ok para no revelar si el email existe o no (anti-enumeration)
+    const user = await prisma.barbershopUser.findUnique({
+      where: { email: String(email).toLowerCase().trim() },
+      include: { barbershop: { select: { name: true } } }
+    });
+
+    if (!user) {
+      return res.json({ ok: true, message: 'Si ese email está registrado, recibirás instrucciones.' });
+    }
+
+    // Generar token seguro — 32 bytes = 64 hex chars
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    // Guard: almacenar hash del token (no el token en claro) por seguridad
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
+
+    await prisma.barbershopUser.update({
+      where: { id: user.id },
+      data: {
+        passwordResetToken: tokenHash,
+        passwordResetExpires: expiresAt
+      }
+    });
+
+    // Enviar email con el token en claro — emailService hace soft-fail si SMTP no está configurado
+    await sendPasswordResetEmail(user.email, rawToken, user.barbershop?.name || 'tu barbería');
+
+    console.log(`[Auth] Reset password solicitado para ${user.email}. Expira: ${expiresAt.toISOString()}`);
+
+    return res.json({ ok: true, message: 'Si ese email está registrado, recibirás instrucciones.' });
+
+  } catch (err) {
+    console.error('Forgot password error:', err);
+    res.status(500).json({ ok: false, error: 'Error interno' });
+  }
+});
+
+// ─────────────────────────────────────────────
+// Restablecer contraseña
+// POST /api/auth/reset-password { token, password }
+// ─────────────────────────────────────────────
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { token, password } = req.body;
+    if (!token || !password) return res.status(400).json({ ok: false, error: 'Faltan datos' });
+    if (String(password).length < 6) return res.status(400).json({ ok: false, error: 'La contraseña debe tener mínimo 6 caracteres' });
+
+    // Hashear el token recibido para comparar con el almacenado en DB
+    const tokenHash = crypto.createHash('sha256').update(String(token)).digest('hex');
+
+    const user = await prisma.barbershopUser.findFirst({
+      where: {
+        passwordResetToken: tokenHash,
+        passwordResetExpires: { gt: new Date() } // token no expirado
+      }
+    });
+
+    if (!user) {
+      return res.status(400).json({ ok: false, error: 'El enlace no es válido o ya expiró. Solicitá uno nuevo.' });
+    }
+
+    const passwordHash = await bcrypt.hash(String(password), 10);
+
+    await prisma.barbershopUser.update({
+      where: { id: user.id },
+      data: {
+        passwordHash,
+        passwordResetToken: null,   // Invalida el token después de usarlo
+        passwordResetExpires: null
+      }
+    });
+
+    console.log(`[Auth] ✅ Contraseña restablecida para user ${user.id} (${user.email})`);
+
+    return res.json({ ok: true, message: 'Contraseña actualizada correctamente. Ya podés iniciar sesión.' });
+
+  } catch (err) {
+    console.error('Reset password error:', err);
+    res.status(500).json({ ok: false, error: 'Error interno' });
   }
 });
 
