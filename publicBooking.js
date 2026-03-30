@@ -4,6 +4,9 @@ const prisma = require("./prisma");
 // refreshMPToken importado de payments.js para auto-renovar tokens expirados
 const { refreshMPToken } = require("./payments");
 
+// ✅ FASE 7: WhatsApp Notification Engine (Fire-and-forget)
+const { notifyCustomerConfirmed, notifyBarberNew } = require("./whatsapp");
+
 const router = express.Router();
 
 // ---------- helpers ----------
@@ -298,7 +301,7 @@ router.get("/:slug/availability", async (req, res) => {
 router.post("/:slug/book", async (req, res) => {
   try {
     const slug = String(req.params.slug || "");
-    const { barberId, serviceId, date, time, customerName, customerPhone, customerEmail, notes } = req.body || {};
+    const { barberId, serviceId, date, time, customerName, customerPhone, customerEmail, notes, wpOptIn } = req.body || {};
 
     if (!barberId) return res.status(400).json({ error: "Falta barberId" });
     if (!serviceId) return res.status(400).json({ error: "Falta serviceId" });
@@ -317,7 +320,7 @@ router.post("/:slug/book", async (req, res) => {
 
     const barber = await prisma.barber.findFirst({
       where: { id: Number(barberId) },
-      select: { id: true, mpAccessToken: true, mpStatus: true, mpTokenExpiresAt: true, name: true }
+      select: { id: true, mpAccessToken: true, mpStatus: true, mpTokenExpiresAt: true, name: true, phone: true }
     });
     if (!barber) return res.status(404).json({ error: "Barbero no encontrado" });
 
@@ -400,6 +403,7 @@ router.post("/:slug/book", async (req, res) => {
         customerPhone: String(customerPhone).trim(),
         customerEmail: customerEmail ? String(customerEmail).trim() : null,
         notes: notes ? String(notes).trim() : null,
+        wpOptIn: typeof wpOptIn === 'boolean' ? wpOptIn : true,
         status: finalStatus,
         paymentStatus: finalPaymentStatus,
         paymentProvider: "mercadopago",
@@ -487,6 +491,25 @@ router.post("/:slug/book", async (req, res) => {
        // Fase 0: El barbero debería cobrar seña pero no tiene MP conectado (o token expiró)
        // En vez de bloquear la reserva, la creamos como CONFIRMED y el pago queda presencial
        console.warn(`[Book] Barbero ${barber.id} (${barber.name}) sin MP activo pero servicio con seña $${depositAmount}. Turno ${created.id} confirmado sin cobro online.`);
+    }
+
+    // ✅ FASE 7: WhatsApp Triggers (Solo cuando NO hay seña flotante o el barbero no tenía el MP conectado)
+    if (finalStatus === "CONFIRMED") {
+      const waPayload = {
+        id: created.id,
+        customerPhone: String(customerPhone).trim(),
+        customerName: String(customerName).trim(),
+        date: String(date),
+        time: String(time),
+        barbershopName: shop.name || "Tu Barbería",
+        wpOptIn: typeof wpOptIn === 'boolean' ? wpOptIn : true,
+        barberPhone: barber.phone,
+        serviceName: out.service.name
+      };
+      
+      // Fire-and-forget acorazado
+      notifyCustomerConfirmed(waPayload).catch(() => {});
+      notifyBarberNew(waPayload).catch(() => {});
     }
 
     return res.json({ 

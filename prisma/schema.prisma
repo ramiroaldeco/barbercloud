@@ -65,6 +65,11 @@ model Appointment {
   // ✅ NUEVO
   customerEmail String?
   notes         String?
+  
+  // ✅ FASE 7: WhatsApp
+  wpOptIn       Boolean  @default(true)
+  whatsappLogs  WhatsappLog[]
+
 
   // ✅ FASE 6: Pagos y Locks
   paymentProvider     String?  @default("mercadopago")
@@ -124,6 +129,8 @@ model Barber {
   avatarBase64 String?    @db.Text
   role         String     @default("Barbero")
   isActive     Boolean    @default(true)
+  phone        String?    // ✅ FASE 7: WhatsApp (Para notificaciones al barbero)
+
   
   // ✅ FASE 6: Pago Individual MP
   mpAccessToken    String?
@@ -164,4 +171,20 @@ model BarberBlockedTime {
   startTime String? // "14:00" Opcional
   endTime   String? // "18:00" Opcional
   reason    String?
+}
+
+// ════════════ MÓDULO DE WA LOGS ════════════
+
+model WhatsappLog {
+  id            Int      @id @default(autoincrement())
+  appointmentId Int
+  recipientType String   // "CUSTOMER" | "BARBER"
+  phone         String   // destination phone
+  template      String   // template used
+  messageId     String?  // Meta Message ID
+  status        String   @default("PENDING") // "SENT" | "FAILED"
+  errorObj      String?  
+  createdAt     DateTime @default(now())
+  
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
 }

@@ -1,5 +1,6 @@
 const express = require("express");
 const jwt = require("jsonwebtoken");
+const { notifyCustomerConfirmed, notifyBarberNew } = require("./whatsapp");
 const crypto = require("crypto");
 const prisma = require("./prisma");
 const auth = require("./authMiddleware"); // ✅ Reutilizamos el middleware de auth existente
@@ -286,7 +287,7 @@ router.post("/webhook", async (req, res) => {
     // 1. Buscar al barbero para usar su token
     const barber = await prisma.barber.findUnique({
       where: { id: Number(barberId) },
-      select: { mpAccessToken: true, mpTokenExpiresAt: true, barbershopId: true }
+      select: { mpAccessToken: true, mpTokenExpiresAt: true, barbershopId: true, phone: true }
     });
 
     if (!barber || !barber.mpAccessToken) {
@@ -319,7 +320,11 @@ router.post("/webhook", async (req, res) => {
 
     // 3. Buscar el turno en DB
     const appt = await prisma.appointment.findUnique({
-      where: { externalReference: external_reference }
+      where: { externalReference: external_reference },
+      include: {
+        service: { select: { name: true } },
+        barbershop: { select: { name: true } }
+      }
     });
 
     if (!appt) {
@@ -358,6 +363,23 @@ router.post("/webhook", async (req, res) => {
         }
       });
       console.log(`[Webhook] ✅ Turno ${appt.id} CONFIRMADO. Pago ID: ${paymentId}`);
+
+      // ✅ FASE 7: WhatsApp Triggers diferidos post-pago exitoso
+      const waPayload = {
+        id: appt.id,
+        customerPhone: appt.customerPhone,
+        customerName: appt.customerName,
+        date: appt.date,
+        time: appt.time,
+        barbershopName: appt.barbershop?.name || "Tu Barbería",
+        wpOptIn: appt.wpOptIn,
+        barberPhone: barber.phone,
+        serviceName: appt.service?.name || "un servicio"
+      };
+      // Fire-and-forget
+      notifyCustomerConfirmed(waPayload).catch(() => {});
+      notifyBarberNew(waPayload).catch(() => {});
+
     } 
     else if (status === "rejected" || status === "cancelled") {
       await prisma.appointment.update({
