@@ -44,7 +44,7 @@ router.post("/", auth, async (req, res) => {
   try {
     if (!requireOwner(req, res)) return;
     
-    const { name, role, avatarBase64, servicesIds } = req.body;
+    const { name, role, phone, avatarBase64, servicesIds } = req.body;
     if (!name?.trim()) return res.status(400).json({ error: "Nombre es obligatorio" });
 
     // ✅ FIX: Validar que todos los serviceIds pertenezcan a esta barbería (evita cross-tenant injection)
@@ -66,6 +66,7 @@ router.post("/", auth, async (req, res) => {
         barbershopId: req.user.barbershopId,
         name: name.trim(),
         role: role?.trim() || "Barbero",
+        phone: phone?.trim() || null,
         avatarBase64: avatarBase64 || null,
         isActive: true,
         services: {
@@ -94,7 +95,7 @@ router.put("/:id", auth, async (req, res) => {
     });
     if (!exists) return res.status(404).json({ error: "Miembro no encontrado" });
 
-    const { name, role, avatarBase64, isActive, servicesIds } = req.body;
+    const { name, role, phone, avatarBase64, isActive, servicesIds } = req.body;
 
     // ✅ FIX: Validar que todos los serviceIds pertenezcan a esta barbería
     if (servicesIds && servicesIds.length > 0) {
@@ -115,6 +116,7 @@ router.put("/:id", auth, async (req, res) => {
       data: {
         name: name !== undefined ? name.trim() : exists.name,
         role: role !== undefined ? role.trim() : exists.role,
+        phone: phone !== undefined ? phone?.trim() : exists.phone,
         avatarBase64: avatarBase64 !== undefined ? avatarBase64 : exists.avatarBase64,
         isActive: isActive !== undefined ? isActive : exists.isActive,
         services: servicesIds ? {
