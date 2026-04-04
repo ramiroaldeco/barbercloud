@@ -1,6 +1,10 @@
 // server.js
 require("dotenv").config();
 
+// Forzar resolución IPv4 para evitar timeouts de Nodemailer hacia Gmail (Render usa IPv6 preferencialmente en algunos clusters, causando ENETUNREACH)
+const dns = require("dns");
+dns.setDefaultResultOrder("ipv4first");
+
 const express = require("express");
 const cors = require("cors");
 const rateLimit = require("express-rate-limit");
@@ -19,6 +23,9 @@ const { router: paymentsRoutes } = require("./payments");
 const statisticsRoutes = require("./statistics");
 
 const app = express();
+
+// Confiar en el proxy de Render X-Forwarded-For para rate-limit
+app.set("trust proxy", 1);
 
 // =========================
 // ✅ CORS

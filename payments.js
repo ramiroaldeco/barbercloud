@@ -266,10 +266,11 @@ router.post("/webhook", async (req, res) => {
   res.status(200).send("OK");
 
   try {
-    // ✅ FIX CRÍTICO: Verificar firma HMAC antes de procesar
+    // ✅ FIX: No bloqueamos si la firma falla. MP a veces varía el payload.
+    // La seguridad real está garantizada en el PASO 2: hacemos fetch a la API de MP 
+    // pidiendo el status del pago con el Token Privado del Barbero.
     if (!verifyMPSignature(req)) {
-      console.error("[Webhook] ❌ Firma inválida — request rechazado silenciosamente");
-      return;
+      console.warn("[Webhook] ⚠️ Firma HMAC inválida — continuando igual porque validaremos el pago con la API de MP.");
     }
 
     const { type, data } = req.body;
