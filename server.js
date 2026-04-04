@@ -1,6 +1,7 @@
 // server.js
 require("dotenv").config();
 
+// TRIG: Redeploy after manual DB unlock
 // Forzar resolución IPv4 para evitar timeouts de Nodemailer hacia Gmail (Render usa IPv6 preferencialmente en algunos clusters, causando ENETUNREACH)
 const dns = require("dns");
 dns.setDefaultResultOrder("ipv4first");
