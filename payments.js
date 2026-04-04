@@ -287,7 +287,7 @@ router.post("/webhook", async (req, res) => {
     // 1. Buscar al barbero para usar su token
     const barber = await prisma.barber.findUnique({
       where: { id: Number(barberId) },
-      select: { mpAccessToken: true, mpTokenExpiresAt: true, barbershopId: true, phone: true }
+      select: { mpAccessToken: true, mpTokenExpiresAt: true, barbershopId: true, email: true }
     });
 
     if (!barber || !barber.mpAccessToken) {
