@@ -27,7 +27,16 @@ function createTransporter() {
     port,
     secure: port === 465,
     auth: { user, pass },
-    tls: { rejectUnauthorized: false }
+    tls: { rejectUnauthorized: false, servername: host },
+    // ═══ FIX DEFINITIVO para Render (IPv6 ENETUNREACH) ═══
+    // Render rutea por IPv6 por defecto y Gmail rechaza la conexión.
+    // Forzamos IPv4 a nivel de socket TCP (net.connect options).
+    family: 4,
+    // Nodemailer >= 6.9 también soporta socketOptions como fallback:
+    socketOptions: { family: 4 },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
   });
 }
 
