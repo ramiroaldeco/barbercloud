@@ -1,38 +1,46 @@
 // emailService.js
-// Servicio de email universal (SMTP) para BarberCloud
-// Funciona con: Gmail, SendGrid SMTP, Resend, Postmark, SMTP personalizado
+// Servicio de email para BarberCloud
 //
-// Variables de entorno a configurar en Render:
-//   SMTP_HOST     = smtp.gmail.com (o tu proveedor)
-//   SMTP_PORT     = 587
-//   SMTP_USER     = tu@email.com
-//   SMTP_PASS     = tu_app_password
-//   SMTP_FROM     = BarberCloud <noreply@tudominio.com>
-//   FRONTEND_URL  = https://barberscloud.vercel.app
+// PRIORIDAD 1 (PRODUCCIÓN): Resend API (HTTP/443) — funciona en Render free tier
+//   Variables: RESEND_API_KEY, RESEND_FROM
+//   Signup gratuito: https://resend.com (3000 emails/mes gratis)
+//
+// PRIORIDAD 2 (LOCAL/FALLBACK): SMTP clásico (nodemailer)
+//   Variables: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM
+//
+// NOTA: Render free tier BLOQUEA el puerto 587/465 (SMTP) a nivel de firewall.
+// Por eso usamos Resend que comunica vía HTTPS (puerto 443, siempre abierto).
 
 const nodemailer = require("nodemailer");
 
-function createTransporter() {
+// ─────────────────────────────────────────────────────────────
+// HELPER: Enviar via Resend API (HTTPS)
+// ─────────────────────────────────────────────────────────────
+async function sendViaResend({ to, subject, html }) {
+  const { Resend } = require("resend");
+  const resend = new Resend(process.env.RESEND_API_KEY);
+  const from = process.env.RESEND_FROM || "BarberCloud <onboarding@resend.dev>";
+
+  const { data, error } = await resend.emails.send({ from, to, subject, html });
+  if (error) throw new Error(JSON.stringify(error));
+  return data;
+}
+
+// ─────────────────────────────────────────────────────────────
+// HELPER: Enviar via SMTP (fallback local)
+// ─────────────────────────────────────────────────────────────
+function createSmtpTransporter() {
   const host = process.env.SMTP_HOST;
   const port = parseInt(process.env.SMTP_PORT || "587");
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
-
-  if (!host || !user || !pass) {
-    return null; // Email no configurado — soft fail
-  }
-
+  if (!host || !user || !pass) return null;
   return nodemailer.createTransport({
-    host,
-    port,
+    host, port,
     secure: port === 465,
     auth: { user, pass },
-    tls: { rejectUnauthorized: false, servername: host },
-    // ═══ FIX DEFINITIVO para Render (IPv6 ENETUNREACH) ═══
-    // Render rutea por IPv6 por defecto y Gmail rechaza la conexión.
-    // Forzamos IPv4 a nivel de socket TCP (net.connect options).
+    tls: { rejectUnauthorized: false },
     family: 4,
-    // Nodemailer >= 6.9 también soporta socketOptions como fallback:
     socketOptions: { family: 4 },
     connectionTimeout: 10000,
     greetingTimeout: 10000,
@@ -40,24 +48,41 @@ function createTransporter() {
   });
 }
 
-const from = () => process.env.SMTP_FROM || "BarberCloud <noreply@barbercloud.app>";
+const smtpFrom = () => process.env.SMTP_FROM || "BarberCloud <noreply@barbercloud.app>";
+
+// ─────────────────────────────────────────────────────────────
+// DISPATCHER: Intenta Resend, luego SMTP como fallback
+// ─────────────────────────────────────────────────────────────
+async function sendEmail({ to, subject, html }) {
+  // 1. Resend API (preferido en producción)
+  if (process.env.RESEND_API_KEY) {
+    try {
+      await sendViaResend({ to, subject, html });
+      return true;
+    } catch (err) {
+      console.error("[Email] Resend falló:", err.message, "— intentando SMTP...");
+    }
+  }
+
+  // 2. SMTP fallback (funciona en local)
+  const transporter = createSmtpTransporter();
+  if (!transporter) {
+    console.warn("[Email] Sin configuración de email (ni RESEND_API_KEY ni SMTP).");
+    return false;
+  }
+  await transporter.sendMail({ from: smtpFrom(), to, subject, html });
+  return true;
+}
 
 // ─────────────────────────────────────────────────────────────
 // 1. Email de recuperación de contraseña
 // ─────────────────────────────────────────────────────────────
 async function sendPasswordResetEmail(to, resetToken, shopName) {
-  const transporter = createTransporter();
-  if (!transporter) {
-    console.warn("[Email] SMTP no configurado — no se envió el email de recuperación");
-    return false;
-  }
-
   const frontendBase = process.env.FRONTEND_URL || "https://barberscloud.vercel.app";
   const resetUrl = `${frontendBase}/reset-password.html?token=${resetToken}`;
 
   try {
-    await transporter.sendMail({
-      from: from(),
+    await sendEmail({
       to,
       subject: "Recuperar contraseña — BarberCloud",
       html: `
@@ -94,18 +119,8 @@ async function sendPasswordResetEmail(to, resetToken, shopName) {
 // ─────────────────────────────────────────────────────────────
 // 2. Confirmación de turno al CLIENTE
 // ─────────────────────────────────────────────────────────────
-/**
- * @param {string} to - Email del cliente
- * @param {{ appointmentId, customerName, barbershopName, serviceName, barberName, date, time, notes }} details
- */
 async function sendConfirmationToCustomer(to, details) {
   if (!to || !to.includes("@")) return false;
-
-  const transporter = createTransporter();
-  if (!transporter) {
-    console.warn("[Email] SMTP no configurado — no se envió confirmación al cliente");
-    return false;
-  }
 
   const { customerName, barbershopName, serviceName, barberName, date, time, appointmentId } = details;
 
@@ -119,8 +134,7 @@ async function sendConfirmationToCustomer(to, details) {
   })();
 
   try {
-    await transporter.sendMail({
-      from: from(),
+    await sendEmail({
       to,
       subject: `Tu turno en ${barbershopName} está confirmado ✅`,
       html: `
@@ -166,18 +180,8 @@ async function sendConfirmationToCustomer(to, details) {
 // ─────────────────────────────────────────────────────────────
 // 3. Aviso de nuevo turno al BARBERO
 // ─────────────────────────────────────────────────────────────
-/**
- * @param {string} to - Email del barbero
- * @param {{ appointmentId, customerName, customerPhone, customerEmail, serviceName, date, time }} details
- */
 async function sendNewAppointmentToBarber(to, details) {
   if (!to || !to.includes("@")) return false;
-
-  const transporter = createTransporter();
-  if (!transporter) {
-    console.warn("[Email] SMTP no configurado — no se envió aviso al barbero");
-    return false;
-  }
 
   const { customerName, customerPhone, customerEmail, serviceName, date, time, appointmentId } = details;
 
@@ -191,8 +195,7 @@ async function sendNewAppointmentToBarber(to, details) {
   })();
 
   try {
-    await transporter.sendMail({
-      from: from(),
+    await sendEmail({
       to,
       subject: `Nuevo turno — ${serviceName} con ${customerName}`,
       html: `

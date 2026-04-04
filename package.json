@@ -26,7 +26,8 @@
     "node-cron": "^4.2.1",
     "nodemailer": "^8.0.4",
     "pg": "^8.20.0",
-    "prisma": "^5.19.1"
+    "prisma": "^5.19.1",
+    "resend": "^6.10.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.0"
