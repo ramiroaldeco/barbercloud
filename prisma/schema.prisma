@@ -15,21 +15,16 @@ model Barbershop {
   address                   String?
   phone                     String?
 
-  // ✅ Slug único para link público (ej: /joacobarber)
   slug                      String?          @unique
 
-  // Config SaaS
-  defaultDepositPercentage  Int              @default(15)  // recomendado 15%
-  platformFee               Int              @default(200) // tu comisión por turno (pesos)
+  defaultDepositPercentage  Int              @default(15)
+  platformFee               Int              @default(200)
 
-  // Identidad
   logoBase64                String?          @db.Text
 
   services                  Service[]
   appointments              Appointment[]
   users                     BarbershopUser[]
-
-  // Relaciones Barberos
   barbers                   Barber[]
 }
 
@@ -39,18 +34,13 @@ model Service {
   barbershop      Barbershop @relation(fields: [barbershopId], references: [id])
 
   name            String
-  price           Int        // pesos enteros
+  price           Int
   durationMinutes Int        @default(30)
-
-  // ✅ NUEVO
   description     String?
 
-  barbers         Barber[]
-
-  // si es null, usa el defaultDepositPercentage de la barbería
+  barbers           Barber[]
   depositPercentage Int?
-
-  appointments    Appointment[]
+  appointments      Appointment[]
 }
 
 model Appointment {
@@ -61,35 +51,25 @@ model Appointment {
 
   customerName  String
   customerPhone String
-
-  // ✅ NUEVO
-  customerEmail String?
+  customerEmail String    // Obligatorio — se usa para enviar confirmación
   notes         String?
-  
-  // ✅ FASE 7: WhatsApp
-  wpOptIn       Boolean  @default(true)
-  whatsappLogs  WhatsappLog[]
 
-
-  // ✅ FASE 6: Pagos y Locks
   paymentProvider     String?  @default("mercadopago")
-  paymentId           String?  // preference_id de MP
-  realPaymentId       String?  // payment_id real de MP (se llena desde webhook al confirmar pago)
+  paymentId           String?
+  realPaymentId       String?
   externalReference   String?  @unique
   lockExpiresAt       DateTime?
 
   date          String
   time          String
 
-  // estados SaaS — siempre UPPERCASE para consistencia con el cron GC
-  status        String   @default("CONFIRMED") // CONFIRMED | PENDING_PAYMENT | CANCELLED_EXPIRED | CANCELLED_MANUAL
-  paymentStatus String   @default("unpaid")    // unpaid | paid | refunded
+  status        String   @default("CONFIRMED")
+  paymentStatus String   @default("unpaid")
 
-  // snapshot al momento de reservar
   depositPercentageAtBooking Int @default(0)
-  servicePrice               Int @default(0) // precio del servicio base
-  depositAmount              Int @default(0) // pesos (lo que paga el cliente hoy, si 0, paga todo en el local)
-  platformFee                Int @default(0) // pesos (tu comisión, oculto a la barbería)
+  servicePrice               Int @default(0)
+  depositAmount              Int @default(0)
+  platformFee                Int @default(0)
 
   createdAt     DateTime @default(now())
 
@@ -97,7 +77,6 @@ model Appointment {
   service       Service    @relation(fields: [serviceId], references: [id])
   barber        Barber?    @relation(fields: [barberId], references: [id])
 
-  // ✅ Evita doble reserva exacta en el mismo barbero e igual hora (aunque la lógica fuerte va por Node.js)
   @@unique([barberId, date, time])
 }
 
@@ -111,7 +90,6 @@ model BarbershopUser {
   passwordHash String
   role         String     @default("owner")
 
-  // Recuperación de contraseña
   passwordResetToken   String?   @unique
   passwordResetExpires DateTime?
 
@@ -124,23 +102,19 @@ model Barber {
   id           Int        @id @default(autoincrement())
   barbershopId Int
   barbershop   Barbershop @relation(fields: [barbershopId], references: [id])
-  
+
   name         String
   avatarBase64 String?    @db.Text
   role         String     @default("Barbero")
   isActive     Boolean    @default(true)
-  phone        String?    // ✅ FASE 7: WhatsApp (Para notificaciones al barbero)
+  email        String?    // Email para recibir avisos de nuevos turnos
 
-  
-  // ✅ FASE 6: Pago Individual MP
   mpAccessToken    String?
   mpUserId         String?
   mpRefreshToken   String?
   mpTokenExpiresAt DateTime?
-  mpStatus         String   @default("NOT_CONNECTED") // CONNECTED, ERROR
-  
-  
-  // Relaciones
+  mpStatus         String   @default("NOT_CONNECTED")
+
   services     Service[]
   appointments Appointment[]
   workingHours BarberWorkingHour[]
@@ -153,11 +127,11 @@ model BarberWorkingHour {
   id        Int    @id @default(autoincrement())
   barberId  Int
   barber    Barber @relation(fields: [barberId], references: [id], onDelete: Cascade)
-  
-  weekday   Int    // 0=Dom ... 6=Sáb
-  startTime String // "09:00"
-  endTime   String // "13:00"
-  
+
+  weekday   Int
+  startTime String
+  endTime   String
+
   @@unique([barberId, weekday, startTime, endTime])
 }
 
@@ -165,26 +139,10 @@ model BarberBlockedTime {
   id        Int     @id @default(autoincrement())
   barberId  Int
   barber    Barber  @relation(fields: [barberId], references: [id], onDelete: Cascade)
-  
-  dateFrom  String  // ISO YYYY-MM-DD
-  dateTo    String? // Opcional para múltiples días
-  startTime String? // "14:00" Opcional
-  endTime   String? // "18:00" Opcional
+
+  dateFrom  String
+  dateTo    String?
+  startTime String?
+  endTime   String?
   reason    String?
-}
-
-// ════════════ MÓDULO DE WA LOGS ════════════
-
-model WhatsappLog {
-  id            Int      @id @default(autoincrement())
-  appointmentId Int
-  recipientType String   // "CUSTOMER" | "BARBER"
-  phone         String   // destination phone
-  template      String   // template used
-  messageId     String?  // Meta Message ID
-  status        String   @default("PENDING") // "SENT" | "FAILED"
-  errorObj      String?  
-  createdAt     DateTime @default(now())
-  
-  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
 }

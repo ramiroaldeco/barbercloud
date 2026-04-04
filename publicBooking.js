@@ -3,9 +3,7 @@ const express = require("express");
 const prisma = require("./prisma");
 // refreshMPToken importado de payments.js para auto-renovar tokens expirados
 const { refreshMPToken } = require("./payments");
-
-// ✅ FASE 7: WhatsApp Notification Engine (Fire-and-forget)
-const { notifyCustomerConfirmed, notifyBarberNew } = require("./whatsapp");
+const { sendConfirmationToCustomer, sendNewAppointmentToBarber } = require("./emailService");
 
 const router = express.Router();
 
@@ -301,7 +299,7 @@ router.get("/:slug/availability", async (req, res) => {
 router.post("/:slug/book", async (req, res) => {
   try {
     const slug = String(req.params.slug || "");
-    const { barberId, serviceId, date, time, customerName, customerPhone, customerEmail, notes, wpOptIn } = req.body || {};
+    const { barberId, serviceId, date, time, customerName, customerPhone, customerEmail, notes } = req.body || {};
 
     if (!barberId) return res.status(400).json({ error: "Falta barberId" });
     if (!serviceId) return res.status(400).json({ error: "Falta serviceId" });
@@ -309,6 +307,7 @@ router.post("/:slug/book", async (req, res) => {
     if (!isValidTime(String(time))) return res.status(400).json({ error: "Hora inválida (HH:MM)" });
     if (!customerName || String(customerName).trim().length < 2) return res.status(400).json({ error: "Falta nombre" });
     if (!customerPhone || String(customerPhone).trim().length < 6) return res.status(400).json({ error: "Falta teléfono" });
+    if (!customerEmail || !String(customerEmail).includes("@")) return res.status(400).json({ error: "Email inválido o faltante" });
 
     if (String(date) < todayISO()) return res.status(400).json({ error: "No se puede reservar en fechas pasadas" });
 
@@ -320,7 +319,7 @@ router.post("/:slug/book", async (req, res) => {
 
     const barber = await prisma.barber.findFirst({
       where: { id: Number(barberId) },
-      select: { id: true, mpAccessToken: true, mpStatus: true, mpTokenExpiresAt: true, name: true, phone: true }
+      select: { id: true, mpAccessToken: true, mpStatus: true, mpTokenExpiresAt: true, name: true, email: true }
     });
     if (!barber) return res.status(404).json({ error: "Barbero no encontrado" });
 
@@ -493,23 +492,24 @@ router.post("/:slug/book", async (req, res) => {
        console.warn(`[Book] Barbero ${barber.id} (${barber.name}) sin MP activo pero servicio con seña $${depositAmount}. Turno ${created.id} confirmado sin cobro online.`);
     }
 
-    // ✅ FASE 7: WhatsApp Triggers (Solo cuando NO hay seña flotante o el barbero no tenía el MP conectado)
+
+    // Email triggers (fire-and-forget) — solo para turnos CONFIRMADOS sin pago pendiente
     if (finalStatus === "CONFIRMED") {
-      const waPayload = {
-        id: created.id,
-        customerPhone: String(customerPhone).trim(),
+      const emailPayload = {
+        appointmentId: created.id,
         customerName: String(customerName).trim(),
-        date: String(date),
-        time: String(time),
+        customerPhone: String(customerPhone).trim(),
+        customerEmail: String(customerEmail).trim(),
         barbershopName: shop.name || "Tu Barbería",
-        wpOptIn: typeof wpOptIn === 'boolean' ? wpOptIn : true,
-        barberPhone: barber.phone,
-        serviceName: out.service.name
+        serviceName: out.service.name || "Servicio",
+        barberName: barber.name || "Barbero",
+        date: String(date),
+        time: String(time)
       };
-      
-      // Fire-and-forget acorazado
-      notifyCustomerConfirmed(waPayload).catch(() => {});
-      notifyBarberNew(waPayload).catch(() => {});
+      sendConfirmationToCustomer(emailPayload.customerEmail, emailPayload).catch(() => {});
+      if (barber.email) {
+        sendNewAppointmentToBarber(barber.email, emailPayload).catch(() => {});
+      }
     }
 
     return res.json({ 

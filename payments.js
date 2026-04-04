@@ -1,7 +1,7 @@
 const express = require("express");
 const jwt = require("jsonwebtoken");
-const { notifyCustomerConfirmed, notifyBarberNew } = require("./whatsapp");
 const crypto = require("crypto");
+const { sendConfirmationToCustomer, sendNewAppointmentToBarber } = require("./emailService");
 const prisma = require("./prisma");
 const auth = require("./authMiddleware"); // ✅ Reutilizamos el middleware de auth existente
 
@@ -323,7 +323,8 @@ router.post("/webhook", async (req, res) => {
       where: { externalReference: external_reference },
       include: {
         service: { select: { name: true } },
-        barbershop: { select: { name: true } }
+        barbershop: { select: { name: true } },
+        barber: { select: { name: true, email: true } }
       }
     });
 
@@ -364,21 +365,24 @@ router.post("/webhook", async (req, res) => {
       });
       console.log(`[Webhook] ✅ Turno ${appt.id} CONFIRMADO. Pago ID: ${paymentId}`);
 
-      // ✅ FASE 7: WhatsApp Triggers diferidos post-pago exitoso
-      const waPayload = {
-        id: appt.id,
-        customerPhone: appt.customerPhone,
+      // Email triggers fire-and-forget post-pago
+      const emailPayload = {
+        appointmentId: appt.id,
         customerName: appt.customerName,
-        date: appt.date,
-        time: appt.time,
+        customerPhone: appt.customerPhone,
+        customerEmail: appt.customerEmail,
         barbershopName: appt.barbershop?.name || "Tu Barbería",
-        wpOptIn: appt.wpOptIn,
-        barberPhone: barber.phone,
-        serviceName: appt.service?.name || "un servicio"
+        serviceName: appt.service?.name || "Servicio",
+        barberName: appt.barber?.name || "Barbero",
+        date: appt.date,
+        time: appt.time
       };
-      // Fire-and-forget
-      notifyCustomerConfirmed(waPayload).catch(() => {});
-      notifyBarberNew(waPayload).catch(() => {});
+      if (appt.customerEmail) {
+        sendConfirmationToCustomer(appt.customerEmail, emailPayload).catch(() => {});
+      }
+      if (appt.barber?.email) {
+        sendNewAppointmentToBarber(appt.barber.email, emailPayload).catch(() => {});
+      }
 
     } 
     else if (status === "rejected" || status === "cancelled") {
