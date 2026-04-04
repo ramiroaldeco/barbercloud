@@ -66,7 +66,7 @@ router.post("/", auth, async (req, res) => {
         barbershopId: req.user.barbershopId,
         name: name.trim(),
         role: role?.trim() || "Barbero",
-        phone: phone?.trim() || null,
+        email: phone?.trim() || null,
         avatarBase64: avatarBase64 || null,
         isActive: true,
         services: {
@@ -116,7 +116,7 @@ router.put("/:id", auth, async (req, res) => {
       data: {
         name: name !== undefined ? name.trim() : exists.name,
         role: role !== undefined ? role.trim() : exists.role,
-        phone: phone !== undefined ? phone?.trim() : exists.phone,
+        email: phone !== undefined ? phone?.trim() : exists.email,
         avatarBase64: avatarBase64 !== undefined ? avatarBase64 : exists.avatarBase64,
         isActive: isActive !== undefined ? isActive : exists.isActive,
         services: servicesIds ? {

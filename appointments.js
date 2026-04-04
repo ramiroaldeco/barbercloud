@@ -3,6 +3,7 @@ const express = require("express");
 const prisma = require("./prisma");
 const auth = require("./authMiddleware");
 const { computeSlots } = require("./publicBooking");
+const { sendConfirmationToCustomer, sendNewAppointmentToBarber } = require("./emailService");
 
 const router = express.Router();
 
@@ -186,8 +187,8 @@ router.post("/owner", auth, async (req, res) => {
         date: String(date),
         time: String(time),
         customerName: String(customerName),
-        customerPhone: customerPhone ? String(customerPhone) : null,
-        customerEmail: customerEmail ? String(customerEmail) : null,
+        customerPhone: customerPhone ? String(customerPhone) : "",
+        customerEmail: customerEmail ? String(customerEmail).trim() : "",
         notes: notes ? String(notes) : null,
         status: finalStatus,
         paymentStatus: "unpaid",
@@ -197,6 +198,37 @@ router.post("/owner", auth, async (req, res) => {
         platformFee: fee,
       },
     });
+
+    // Email triggers para turnos manuales creados por el barbero
+    if (finalStatus === "CONFIRMED") {
+      const barber = await prisma.barber.findUnique({
+        where: { id: brbId },
+        select: { name: true, email: true }
+      });
+      const barbershop = await prisma.barbershop.findUnique({
+        where: { id: myBarbershopId },
+        select: { name: true }
+      });
+      const emailPayload = {
+        appointmentId: created.id,
+        customerName: String(customerName),
+        customerPhone: customerPhone ? String(customerPhone) : "",
+        customerEmail: customerEmail ? String(customerEmail).trim() : "",
+        barbershopName: barbershop?.name || "Tu Barbería",
+        serviceName: service.name || "Servicio",
+        barberName: barber?.name || "Barbero",
+        date: String(date),
+        time: String(time)
+      };
+      // Al barbero siempre
+      if (barber?.email) {
+        sendNewAppointmentToBarber(barber.email, emailPayload).catch(() => {});
+      }
+      // Al cliente solo si dejó email
+      if (customerEmail && String(customerEmail).includes("@")) {
+        sendConfirmationToCustomer(String(customerEmail).trim(), emailPayload).catch(() => {});
+      }
+    }
 
     return res.json({ ok: true, appointment: created, depositAmount, depositPct, platformFee: fee, servicePrice: price });
   } catch (e) {
@@ -274,7 +306,7 @@ router.post("/", async (req, res) => {
         time: String(time),
         customerName: String(customerName),
         customerPhone: String(customerPhone),
-        customerEmail: customerEmail ? String(customerEmail) : null,
+        customerEmail: customerEmail ? String(customerEmail).trim() : "",
         notes: notes ? String(notes) : null,
         status: "CONFIRMED",
         paymentStatus: "unpaid",
