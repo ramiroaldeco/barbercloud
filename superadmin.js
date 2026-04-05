@@ -116,7 +116,6 @@ router.get("/barbershops", requireSuperAdmin, async (req, res) => {
         name: true,
         slug: true,
         city: true,
-        createdAt: true,
         platformFee: true,
         defaultDepositPercentage: true,
         _count: {
@@ -126,7 +125,7 @@ router.get("/barbershops", requireSuperAdmin, async (req, res) => {
           }
         }
       },
-      orderBy: { createdAt: "desc" }
+      orderBy: { id: "desc" }
     });
 
     // Para cada barbería, contar turnos confirmados y volumen de señas

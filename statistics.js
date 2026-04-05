@@ -45,7 +45,8 @@ router.get("/", auth, async (req, res) => {
     const isConfirmed = (s) => s === "CONFIRMED" || s === "confirmed";
     const isCanceled = (s) => s ? (String(s).includes("CANCEL") || String(s).includes("cancel")) : false;
 
-    let totalNetIncome = 0;
+    let totalDepositIncome = 0;
+    let totalFullIncome = 0;
     let confirmedCount = 0;
     let canceledCount = 0;
 
@@ -59,13 +60,13 @@ router.get("/", auth, async (req, res) => {
       for (let i = 0; i < days; i++) {
         const d = new Date(fromDateObj);
         d.setDate(d.getDate() + i);
-        tsMap[getArgDateString(d)] = { income: 0, appointments: 0 };
+        tsMap[getArgDateString(d)] = { deposit: 0, total: 0, appointments: 0 };
       }
     } else {
       for (let i = 0; i < 12; i++) {
         const d = new Date();
         d.setMonth(d.getMonth() - i);
-        tsMap[getArgMonthKey(getArgDateString(d))] = { income: 0, appointments: 0 };
+        tsMap[getArgMonthKey(getArgDateString(d))] = { deposit: 0, total: 0, appointments: 0 };
       }
     }
 
@@ -77,11 +78,11 @@ router.get("/", auth, async (req, res) => {
 
       if (!isConfirmed(a.status)) continue;
 
-      // ✅ FIX: Usar depositAmount (lo que realmente cobró) en vez de servicePrice (precio total)
-      // Si depositAmount es 0, el pago se hace presencial — se registra como 0 online
-      const netIncome = a.depositAmount > 0 ? a.depositAmount : (a.servicePrice || 0);
+      const depositIncome = a.depositAmount || 0;
+      const fullIncome = a.servicePrice || 0;
 
-      totalNetIncome += netIncome;
+      totalDepositIncome += depositIncome;
+      totalFullIncome += fullIncome;
       confirmedCount++;
 
       // Timeseries
@@ -90,52 +91,56 @@ router.get("/", auth, async (req, res) => {
         dateKey = getArgMonthKey(a.date);
       }
       if (tsMap[dateKey]) {
-        tsMap[dateKey].income += netIncome;
+        tsMap[dateKey].deposit += depositIncome;
+        tsMap[dateKey].total += fullIncome;
         tsMap[dateKey].appointments++;
       } else if (isYear) {
-        tsMap[dateKey] = { income: netIncome, appointments: 1 };
+        tsMap[dateKey] = { deposit: depositIncome, total: fullIncome, appointments: 1 };
       }
 
       // Barber Metrics
       if (a.barber) {
-        if (!barberMap[a.barber.name]) barberMap[a.barber.name] = { income: 0, count: 0 };
-        barberMap[a.barber.name].income += netIncome;
+        if (!barberMap[a.barber.name]) barberMap[a.barber.name] = { deposit: 0, total: 0, count: 0 };
+        barberMap[a.barber.name].deposit += depositIncome;
+        barberMap[a.barber.name].total += fullIncome;
         barberMap[a.barber.name].count++;
       }
 
       // Service Metrics
       if (a.service) {
-        if (!serviceMap[a.service.name]) serviceMap[a.service.name] = { income: 0, count: 0 };
-        serviceMap[a.service.name].income += netIncome;
+        if (!serviceMap[a.service.name]) serviceMap[a.service.name] = { deposit: 0, total: 0, count: 0 };
+        serviceMap[a.service.name].deposit += depositIncome;
+        serviceMap[a.service.name].total += fullIncome;
         serviceMap[a.service.name].count++;
       }
 
-      // Client Metrics (agrupado por teléfono)
+      // Client Metrics
       if (a.customerPhone) {
         const p = a.customerPhone;
         const cName = a.customerName || "Sin Nombre";
-        if (!clientMap[p]) clientMap[p] = { name: cName, count: 0, spent: 0 };
+        if (!clientMap[p]) clientMap[p] = { name: cName, count: 0, deposit: 0, total: 0 };
         clientMap[p].count++;
-        clientMap[p].spent += netIncome;
+        clientMap[p].deposit += depositIncome;
+        clientMap[p].total += fullIncome;
         if (cName.length > (clientMap[p].name || "").length) {
           clientMap[p].name = cName;
         }
       }
     }
 
-    const timeseries = Object.keys(tsMap).sort().map(k => ({ date: k, income: tsMap[k].income, appointments: tsMap[k].appointments }));
-    const barbersData = Object.keys(barberMap).map(k => ({ name: k, ...barberMap[k] })).sort((a, b) => b.income - a.income);
-    const servicesData = Object.keys(serviceMap).map(k => ({ name: k, ...serviceMap[k] })).sort((a, b) => b.income - a.income);
+    const timeseries = Object.keys(tsMap).sort().map(k => ({ date: k, ...tsMap[k] }));
+    const barbersData = Object.keys(barberMap).map(k => ({ name: k, ...barberMap[k] })).sort((a, b) => b.total - a.total);
+    const servicesData = Object.keys(serviceMap).map(k => ({ name: k, ...serviceMap[k] })).sort((a, b) => b.total - a.total);
     const topClients = Object.values(clientMap).sort((a, b) => b.count - a.count).slice(0, 5);
-    const averageTicket = confirmedCount > 0 ? Math.round(totalNetIncome / confirmedCount) : 0;
+    const averageTicket = confirmedCount > 0 ? Math.round(totalFullIncome / confirmedCount) : 0;
 
-    // Tasa de cancelación
     const totalProcessed = confirmedCount + canceledCount;
     const cancellationRate = totalProcessed > 0 ? Math.round((canceledCount / totalProcessed) * 100) : 0;
 
     res.json({
       summary: {
-        totalNetIncome,
+        totalDepositIncome,
+        totalFullIncome,
         confirmedCount,
         canceledCount,
         cancellationRate,
