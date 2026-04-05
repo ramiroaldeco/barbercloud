@@ -46,7 +46,7 @@ const corsOptions = {
 
     return cb(new Error("CORS bloqueado para: " + origin), false);
   },
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "x-admin-key"],
   credentials: true,
 };
