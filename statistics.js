@@ -34,7 +34,7 @@ router.get("/", auth, async (req, res) => {
     const items = await prisma.appointment.findMany({
       where: {
         barbershopId: myBarbershopId,
-        date: { gte: fromDateArg, lte: todayArg }
+        date: { gte: fromDateArg }
       },
       include: {
         barber: true,
@@ -90,13 +90,12 @@ router.get("/", auth, async (req, res) => {
       if (isYear) {
         dateKey = getArgMonthKey(a.date);
       }
-      if (tsMap[dateKey]) {
-        tsMap[dateKey].deposit += depositIncome;
-        tsMap[dateKey].total += fullIncome;
-        tsMap[dateKey].appointments++;
-      } else if (isYear) {
-        tsMap[dateKey] = { deposit: depositIncome, total: fullIncome, appointments: 1 };
+      if (!tsMap[dateKey]) {
+        tsMap[dateKey] = { deposit: 0, total: 0, appointments: 0 };
       }
+      tsMap[dateKey].deposit += depositIncome;
+      tsMap[dateKey].total += fullIncome;
+      tsMap[dateKey].appointments++;
 
       // Barber Metrics
       if (a.barber) {

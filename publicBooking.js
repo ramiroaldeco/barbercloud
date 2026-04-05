@@ -307,7 +307,6 @@ router.post("/:slug/book", async (req, res) => {
     if (!isValidTime(String(time))) return res.status(400).json({ error: "Hora inválida (HH:MM)" });
     if (!customerName || String(customerName).trim().length < 2) return res.status(400).json({ error: "Falta nombre" });
     if (!customerPhone || String(customerPhone).trim().length < 6) return res.status(400).json({ error: "Falta teléfono" });
-    if (!customerEmail || !String(customerEmail).includes("@")) return res.status(400).json({ error: "Email inválido o faltante" });
 
     if (String(date) < todayISO()) return res.status(400).json({ error: "No se puede reservar en fechas pasadas" });
 
