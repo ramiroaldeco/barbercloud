@@ -23,6 +23,22 @@ const blockedTimesRoutes = require("./blockedTimes");
 const { router: paymentsRoutes } = require("./payments");
 const statisticsRoutes = require("./statistics");
 const superadminRoutes = require("./superadmin");
+const log = require("./logger");
+
+// =========================
+// ✅ GLOBAL ERROR HANDLERS
+// Captura crashes y promesas sin manejar — los hace visibles en los logs de Render
+// =========================
+process.on("uncaughtException", (err) => {
+  log.error("[FATAL] uncaughtException — proceso en estado inconsistente:", err.message, "\n", err.stack);
+  // No llamamos process.exit() para no derribar el servidor ante errores recuperables.
+  // Si el proceso queda inestable, Render lo reinicia solo.
+});
+
+process.on("unhandledRejection", (reason) => {
+  const detail = reason instanceof Error ? reason.stack : String(reason);
+  log.error("[FATAL] unhandledRejection — promesa sin .catch():", detail);
+});
 
 const app = express();
 
@@ -121,6 +137,25 @@ app.use("/api/blocked-times", blockedTimesRoutes);
 app.use("/api/payments", paymentsRoutes);
 app.use("/api/statistics", statisticsRoutes);
 app.use("/api/superadmin", superadminRoutes);
+
+// =========================
+// ✅ MIDDLEWARE ERROR 500
+// DEBE estar después de todas las rutas.
+// Captura solo errores pasados via next(err) — no interfiere con try/catch existentes.
+// =========================
+app.use((err, req, res, next) => {
+  const status = err.status || err.statusCode || 500;
+  const context = `[${req.method}] ${req.originalUrl}`;
+
+  if (status >= 500) {
+    log.error(`${context} → ${status}:`, err.message, "\n", err.stack || "");
+  } else {
+    log.warn(`${context} → ${status}:`, err.message);
+  }
+
+  if (res.headersSent) return next(err);
+  return res.status(status).json({ error: err.message || "Error interno del servidor" });
+});
 
 // =========================
 // ✅ START SERVER & CRON
